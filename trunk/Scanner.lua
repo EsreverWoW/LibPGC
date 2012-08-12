@@ -3,6 +3,7 @@
 -- ***************************************************************************************************************************************************
 -- * Processes auction scans and stores them in the auction DB                                                                                       *
 -- ***************************************************************************************************************************************************
+-- * 0.4.4 / 2012.08.12 / Baanano: Fixed minor bug in Event.LibPGC.AuctionData                                                                       *
 -- * 0.4.1 / 2012.07.10 / Baanano: Updated for LibPGC                                                                                                *
 -- * 0.4.0 / 2012.05.31 / Baanano: Rewritten AHMonitoringService.lua                                                                                 *
 -- ***************************************************************************************************************************************************
@@ -349,7 +350,7 @@ local function LoadAuctionTable(addonId)
 		auctionTableLoaded = true
 	end
 end
-TInsert(Event.Addon.SavedVariables.Load.End, {LoadAuctionTable, addonID, addonID .. "Scanner.LoadAuctionData"})
+TInsert(Event.Addon.SavedVariables.Load.End, {LoadAuctionTable, addonID, addonID .. ".Scanner.LoadAuctionData"})
 
 local function SaveAuctionTable(addonId)
 	if addonId == addonID and auctionTableLoaded then
@@ -377,7 +378,7 @@ local function SaveAuctionTable(addonId)
 		_G[addonID .. "AuctionTable"] = auctionTable
 	end
 end
-TInsert(Event.Addon.SavedVariables.Save.Begin, {SaveAuctionTable, addonID, addonID .. "Scanner.SaveAuctionData"})
+TInsert(Event.Addon.SavedVariables.Save.Begin, {SaveAuctionTable, addonID, addonID .. ".Scanner.SaveAuctionData"})
 
 local function ProcessAuctionBuy(auctionID)
 	local itemType = cachedAuctions[auctionID]
@@ -394,7 +395,7 @@ local function ProcessAuctionBuy(auctionID)
 		itemInfo.expiredAuctions[auctionID] = auctionInfo
 		itemInfo.activeAuctions[auctionID] = nil
 		
-		AuctionDataEvent("playerbuy", {auctionID}, {}, {}, {auctionID}, {auctionID}, {itemType = true}, {}, {}, {itemType = true}, {})
+		AuctionDataEvent("playerbuy", {auctionID}, {}, {}, {auctionID}, {auctionID}, {[itemType] = true}, {}, {}, {[itemType] = true}, {})
 	end
 end
 
@@ -410,7 +411,7 @@ local function ProcessAuctionBid(auctionID, amount)
 			auctionInfo.bidded = true
 			auctionInfo.bid = amount
 			auctionInfo.ownBidded = amount
-			AuctionDataEvent("playerbid", {auctionID}, {}, {auctionID}, {}, {}, {itemType = true}, {}, {itemType = true}, {}, {})
+			AuctionDataEvent("playerbid", {auctionID}, {}, {auctionID}, {}, {}, {[itemType] = true}, {}, {[itemType] = true}, {}, {})
 		end
 	end
 end
@@ -430,7 +431,7 @@ local function ProcessAuctionCancel(auctionID)
 		itemInfo.expiredAuctions[auctionID] = auctionInfo
 		itemInfo.activeAuctions[auctionID] = nil
 		
-		AuctionDataEvent("playercancel", {auctionID}, {}, {}, {auctionID}, {auctionID}, {itemType = true}, {}, {}, {itemType = true}, {})
+		AuctionDataEvent("playercancel", {auctionID}, {}, {}, {auctionID}, {auctionID}, {[itemType] = true}, {}, {}, {[itemType] = true}, {})
 	end
 end
 
@@ -612,5 +613,5 @@ function PublicInterface.GetLastTimeSeen(item)
 		itemType = ok and itemDetail and itemDetail.type or nil
 	end
 	
-	return auctionTable[itemType] and auctionTable[itemType].lastSeen or nil 
+	return itemType and auctionTable[itemType] and auctionTable[itemType].lastSeen or nil 
 end	

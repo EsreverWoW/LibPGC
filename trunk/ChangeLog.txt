@@ -1,2 +1,5 @@
+	Release 0.4.4
+- Fixed minor bug in Event.LibPGC.AuctionData
+
 	Release 0.4.1
-- First version independant from BananAH
+- First version independent from BananAH
