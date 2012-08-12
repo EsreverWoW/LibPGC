@@ -3,6 +3,7 @@
 -- ***************************************************************************************************************************************************
 -- * Search tree that allows to index the auctionDB in the same way that the native auction searcher                                                 *
 -- ***************************************************************************************************************************************************
+-- * 0.4.4 / 2012.08.12 / Baanano: Fixed minor category bugs                                                                                         *
 -- * 0.4.1 / 2012.07.10 / Baanano: Moved to LibPGC                                                                                                   *
 -- * 0.4.0 / 2012.05.31 / Baanano: Rewritten AuctionTree.lua                                                                                         *
 -- ***************************************************************************************************************************************************
@@ -63,7 +64,7 @@ function InternalInterface.Indexers.BuildNativeIndexer()
 						for level, levelSubtree in pairs(raritySubtree) do
 							if (not levelMin or level >= levelMin) and (not levelMax or level <= levelMax) then
 								for categoryName, categorySubtree in pairs(levelSubtree) do
-									if not category or categoryName:find(category) then
+									if not category or categoryName:sub(1, category:len()) == category then
 										for itemName, nameSubtree in pairs(categorySubtree) do
 											if not name or itemName:find(name) then
 												for price, priceSubtree in pairs(nameSubtree) do
