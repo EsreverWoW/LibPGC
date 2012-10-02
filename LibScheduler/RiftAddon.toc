@@ -1,0 +1,21 @@
+Identifier = "LibScheduler"
+Name =
+{
+	English = "LibScheduler",
+	French = "LibScheduler",
+	German = "LibScheduler",
+}
+NameShort = "LibScheduler"
+Description =
+{
+	English = "A scheduler library for async execution.",
+}
+Author = "Baanano"
+Version = "0.4.4"
+Email = "baanano.rift@gmail.com"
+Website = "http://www.bananah.net/"
+Environment = "1.10"
+RunOnStartup =
+{
+	"Scheduler.lua",
+}
