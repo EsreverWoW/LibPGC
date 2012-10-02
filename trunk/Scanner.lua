@@ -16,14 +16,14 @@ local PublicInterface = _G[addonID]
 
 local MAX_DATA_AGE = 30 * 24 * 60 * 60
 
-local CYield = coroutine.yield
+local CreateTask = LibScheduler.CreateTask
+local GetPlayerName = InternalInterface.Utility.GetPlayerName
 local IInteraction = Inspect.Interaction
 local IADetail = Inspect.Auction.Detail
 local IIDetail = Inspect.Item.Detail
-local GetPlayerName = InternalInterface.Utility.GetPlayerName
 local MMax = math.max
 local MMin = math.min
-local QueueTask = InternalInterface.Scheduler.QueueTask
+local Release = LibScheduler.Release
 local Time = Inspect.Time.Server
 local TInsert = table.insert
 local TSort = table.sort
@@ -39,6 +39,8 @@ local pendingPosts = {}
 
 local nativeIndexer = InternalInterface.Indexers.BuildNativeIndexer()
 local ownIndex = {}
+
+local lastTask = nil
 
 local AuctionDataEvent = Utility.Event.Create(addonID, "AuctionData")
 
@@ -220,7 +222,7 @@ local function OnAuctionData(criteria, auctions)
 				break 
 			end
 			ProcessAuction(auctionID, auctionDetail)
-			CYield()
+			Release()
 		end
 
 		if criteria.type == "search" then
@@ -250,7 +252,7 @@ local function OnAuctionData(criteria, auctions)
 						itemData.expiredAuctions[auctionID] = auctionData
 						itemData.activeAuctions[auctionID] = nil
 					end
-					CYield()
+					Release()
 				end
 			end
 		elseif criteria.type == "mine" then
@@ -271,7 +273,7 @@ local function OnAuctionData(criteria, auctions)
 					itemData.expiredAuctions[auctionID] = auctionData
 					itemData.activeAuctions[auctionID] = nil
 				end
-				CYield()
+				Release()
 			end
 		end
 
@@ -302,7 +304,7 @@ local function OnAuctionData(criteria, auctions)
 				if auctionMET < prevAuctionMET then
 					auctionTable[cachedAuctions[auctionID]].activeAuctions[auctionID].minExpire = prevAuctionMET
 				end
-				CYield()
+				Release()
 			end
 			for index = #knownAuctions - 1, 1, -1 do
 				local auctionID = knownAuctions[index]
@@ -314,7 +316,7 @@ local function OnAuctionData(criteria, auctions)
 				if auctionXET > nextAuctionXET then
 					auctionTable[cachedAuctions[auctionID]].activeAuctions[auctionID].maxExpire = nextAuctionXET
 				end
-				CYield()
+				Release()
 			end
 		end		
 	end
@@ -323,7 +325,7 @@ local function OnAuctionData(criteria, auctions)
 		AuctionDataEvent(criteria.type, totalAuctions, newAuctions, updatedAuctions, removedAuctions, beforeExpireAuctions, totalItemTypes, newItemTypes, updatedItemTypes, removedItemTypes, modifiedItemTypes)
 	end
 	
-	QueueTask(ProcessAuctions, ProcessCompleted)
+	lastTask = CreateTask(ProcessAuctions, ProcessCompleted, nil, lastTask) or lastTask
 end
 TInsert(Event.Auction.Scan, { OnAuctionData, addonID, addonID .. ".Scanner.OnAuctionData" })
 
@@ -472,7 +474,7 @@ local function SearchAuctionsAsync(calling, rarity, levelMin, levelMax, category
 	local auctions = nativeIndexer:Search(calling, rarity, levelMin, levelMax, category, priceMin, priceMax, name)
 	for auctionID, itemType in pairs(auctions) do
 		auctions[auctionID] = GetAuctionData(itemType, auctionID)
-		CYield()
+		Release()
 	end
 	return auctions
 end
@@ -490,7 +492,7 @@ local function GetAuctionDataAsync(item, startTime, endTime, excludeExpired)
 				if auctionData and auctionData.lastSeenTime >= startTime and auctionData.firstSeenTime <= endTime then
 					auctions[auctionID] = auctionData
 				end
-				CYield()
+				Release()
 			end
 			
 			if not excludeExpired then
@@ -499,7 +501,7 @@ local function GetAuctionDataAsync(item, startTime, endTime, excludeExpired)
 					if auctionData and auctionData.lastSeenTime >= startTime and auctionData.firstSeenTime <= endTime then
 						auctions[auctionID] = auctionData
 					end
-					CYield()
+					Release()
 				end
 			end
 		end
@@ -520,7 +522,7 @@ local function GetAuctionDataAsync(item, startTime, endTime, excludeExpired)
 			if auctionData and auctionData.lastSeenTime >= startTime and auctionData.firstSeenTime <= endTime then
 				auctions[auctionID] = auctionData
 			end
-			CYield()
+			Release()
 		end
 		
 		if not excludeExpired then
@@ -529,7 +531,7 @@ local function GetAuctionDataAsync(item, startTime, endTime, excludeExpired)
 				if auctionData and auctionData.lastSeenTime >= startTime and auctionData.firstSeenTime <= endTime then
 					auctions[auctionID] = auctionData
 				end
-				CYield()
+				Release()
 			end
 		end
 	end
@@ -541,7 +543,7 @@ local function GetOwnAuctionDataAsync()
 	local auctions = {}
 	for auctionID, itemType in pairs(ownIndex) do
 		auctions[auctionID] = GetAuctionData(itemType, auctionID)
-		CYield()
+		Release()
 	end
 	return auctions
 end
@@ -551,14 +553,14 @@ end
 function PublicInterface.GetAuctionBuyCallback(auctionID)
 	return function(failed)
 		if failed then return end
-		QueueTask(function() ProcessAuctionBuy(auctionID) end)
+		lastTask = CreateTask(function() ProcessAuctionBuy(auctionID) end, nil, nil, lastTask) or lastTask
 	end
 end
 
 function PublicInterface.GetAuctionBidCallback(auctionID, amount)
 	return function(failed)
 		if failed then return end
-		QueueTask(function() ProcessAuctionBid(auctionID, amount) end)
+		lastTask = CreateTask(function() ProcessAuctionBid(auctionID, amount) end, nil, nil, lastTask) or lastTask
 	end
 end
 
@@ -566,7 +568,7 @@ function PublicInterface.GetAuctionPostCallback(itemType, duration, bid, buyout)
 	local timestamp = Time()
 	return function(failed)
 		if not failed then
-			QueueTask(function() TryMatchPost(itemType, duration, timestamp, bid, buyout or 0) end)
+			lastTask = CreateTask(function() TryMatchPost(itemType, duration, timestamp, bid, buyout or 0) end, nil, nil, lastTask) or lastTask
 		end
 	end
 end
@@ -574,7 +576,7 @@ end
 function PublicInterface.GetAuctionCancelCallback(auctionID)
 	return function(failed)
 		if failed then return end
-		QueueTask(function() ProcessAuctionCancel(auctionID) end)
+		lastTask = CreateTask(function() ProcessAuctionCancel(auctionID) end, nil, nil, lastTask) or lastTask
 	end
 end
 
@@ -582,22 +584,22 @@ PublicInterface.GetAuctionData = GetAuctionData
 
 function PublicInterface.SearchAuctions(callback, calling, rarity, levelMin, levelMax, category, priceMin, priceMax, name)
 	if type(callback) ~= "function" then return end
-	QueueTask(function() return SearchAuctionsAsync(calling, rarity, levelMin, levelMax, category, priceMin, priceMax, name) end, callback)
+	lastTask = CreateTask(function() return SearchAuctionsAsync(calling, rarity, levelMin, levelMax, category, priceMin, priceMax, name) end, callback, nil, lastTask) or lastTask
 end
 
 function PublicInterface.GetAllAuctionData(callback, item, startTime, endTime)
 	if type(callback) ~= "function" then return end
-	QueueTask(function() return GetAuctionDataAsync(item, startTime, endTime, false) end, callback)
+	lastTask = CreateTask(function() return GetAuctionDataAsync(item, startTime, endTime, false) end, callback, nil, lastTask) or lastTask
 end
 
 function PublicInterface.GetActiveAuctionData(callback, item)
 	if type(callback) ~= "function" then return end
-	QueueTask(function() return GetAuctionDataAsync(item, nil, nil, true) end, callback)
+	lastTask = CreateTask(function() return GetAuctionDataAsync(item, nil, nil, true) end, callback, nil, lastTask) or lastTask
 end
 
 function PublicInterface.GetOwnAuctionData(callback)
 	if type(callback) ~= "function" then return end
-	QueueTask(GetOwnAuctionDataAsync, callback)
+	lastTask = CreateTask(GetOwnAuctionDataAsync, callback, nil, lastTask) or lastTask
 end	
 
 function PublicInterface.GetAuctionCached(auctionID)
@@ -605,6 +607,8 @@ function PublicInterface.GetAuctionCached(auctionID)
 end
 
 function PublicInterface.GetLastTimeSeen(item)
+	if not item then return nil end
+
 	local itemType = nil
 	if item:sub(1, 1) == "I" then
 		itemType = item
@@ -615,3 +619,7 @@ function PublicInterface.GetLastTimeSeen(item)
 	
 	return itemType and auctionTable[itemType] and auctionTable[itemType].lastSeen or nil 
 end	
+
+function PublicInterface.GetLastTask()
+	return lastTask
+end

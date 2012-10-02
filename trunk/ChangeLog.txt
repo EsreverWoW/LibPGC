@@ -1,3 +1,7 @@
+	r5
+- Started using LibScheduler
+- Fixed bug in GetLastTimeSeen	
+
 	Release 0.4.4
 - Fixed minor bug in Event.LibPGC.AuctionData
 

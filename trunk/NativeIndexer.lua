@@ -11,6 +11,9 @@
 local addonInfo, InternalInterface = ...
 local addonID = addonInfo.identifier
 
+local Release = LibScheduler.Release
+local pairs = pairs
+
 local Rarities = { sellable = 1, [""] = 2, common = 2, uncommon = 3, rare = 4, epic = 5, relic = 6, transcendant = 7, quest = 8, }
 
 InternalInterface.Indexers = InternalInterface.Indexers or {}
@@ -73,16 +76,22 @@ function InternalInterface.Indexers.BuildNativeIndexer()
 															results[auctionID] = itemType
 														end
 													end
+													Release()
 												end
 											end
+											Release()
 										end
 									end
+									Release()
 								end
 							end
+							Release()
 						end
 					end
+					Release()
 				end
 			end
+			Release()
 		end
 		
 		return results
