@@ -3,8 +3,9 @@
 -- ***************************************************************************************************************************************************
 -- * Posts auctions, splitting stacks if needed                                                                                                      *
 -- ***************************************************************************************************************************************************
--- * 0.4.1  / 2012.07.14 / Baanano: Updated for LibPGC                                                                                               *
--- * 0.4.0  / 2012.06.17 / Baanano: Rewritten AHPostingService.lua                                                                                   *
+-- * 0.4.4 / 2012.11.01 / Baanano: Added auto unjam (best effort)                                                                                    *
+-- * 0.4.1 / 2012.07.14 / Baanano: Updated for LibPGC                                                                                                *
+-- * 0.4.0 / 2012.06.17 / Baanano: Rewritten AHPostingService.lua                                                                                    *
 -- ***************************************************************************************************************************************************
 
 local addonInfo, InternalInterface = ...
@@ -12,6 +13,8 @@ local addonID = addonInfo.identifier
 
 _G[addonID] = _G[addonID] or {}
 local PublicInterface = _G[addonID]
+
+local AUTO_UNJAM_FRAMES = 60
 
 local CCreate = coroutine.create
 local CResume = coroutine.resume
@@ -39,6 +42,7 @@ local CopyTableRecursive = InternalInterface.Utility.CopyTableRecursive
 local postingQueue = {}
 local paused = false
 local waitingUpdate = false
+local waitFrames = 5
 local postingCoroutine = nil
 local QueueChangedEvent = UECreate(addonID, "PostingQueueChanged")
 local QueueStatusChangedEvent = UECreate(addonID, "PostingQueueStatusChanged")
@@ -66,8 +70,12 @@ local function PostingQueueCoroutine()
 
 			local slot = UISInventory()
 			local items = IIList(slot)
+			local freeSlots = false
 			for slotID, itemID in pairs(items) do repeat
-				if type(itemID) == "boolean" then break end
+				if type(itemID) == "boolean" then
+					freeSlots = true
+					break
+				end
 				local itemDetail = IIDetail(itemID)
 				if itemDetail.bound == true or itemDetail.type ~= itemType then break end
 				
@@ -120,11 +128,20 @@ local function PostingQueueCoroutine()
 			end
 
 			if #higherItems > 0 then -- Need to split an item
-				local item = higherItems[1].itemID
-				CISplit(item, searchStackSize)
-				waitingUpdate = true
-				QueueStatusChangedEvent()
-				break
+				if freeSlots then -- There are free slots, split
+					local item = higherItems[1].itemID
+					CISplit(item, searchStackSize)
+					waitingUpdate = true
+					QueueStatusChangedEvent()
+					break
+				else -- No free slots, move the item to the end of the queue
+					TInsert(postingQueue, postTable)
+					TRemove(postingQueue, 1)
+					waitFrames = AUTO_UNJAM_FRAMES
+					QueueChangedEvent()
+					QueueStatusChangedEvent()
+					break	
+				end
 			end
 
 			-- If execution reach this point, there aren't enough stacks of the item to post, abort
@@ -140,7 +157,11 @@ local function OnSystemUpdate()
 	if not postingCoroutine then
 		postingCoroutine = CCreate(PostingQueueCoroutine)
 	end
-	CResume(postingCoroutine)
+	if waitFrames > 0 then
+		waitFrames = waitFrames - 1
+	else
+		CResume(postingCoroutine)
+	end
 end
 TInsert(Event.System.Update.Begin, { OnSystemUpdate, addonID, addonID .. ".PostQueue.OnSystemUpdate" })
 
@@ -223,6 +244,7 @@ function PublicInterface.GetPostingQueueStatus()
 	elseif #postingQueue <= 0 then status = 2 -- Empty
 	elseif not IInteraction("auction") then status = 3 -- Not at the AH
 	elseif waitingUpdate or not IQStatus("global") then status = 4 -- Waiting
+	elseif waitFrames > 0 then status = 5 -- Jammed
 	end
 	
 	return status, #postingQueue
