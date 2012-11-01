@@ -1,3 +1,6 @@
+	r6
+- Added auto unjam feature (best effort behavior)
+
 	r5
 - Started using LibScheduler
 - Fixed bug in GetLastTimeSeen	
