@@ -15,18 +15,23 @@ _G[addonID] = _G[addonID] or {}
 local PublicInterface = _G[addonID]
 
 local MAX_DATA_AGE = 30 * 24 * 60 * 60
+local PAGESIZE = 1000
 
 local CreateTask = LibScheduler.CreateTask
 local GetPlayerName = InternalInterface.Utility.GetPlayerName
 local IInteraction = Inspect.Interaction
 local IADetail = Inspect.Auction.Detail
 local IIDetail = Inspect.Item.Detail
+local MFloor = math.floor
 local MMax = math.max
 local MMin = math.min
 local Release = LibScheduler.Release
 local Time = Inspect.Time.Server
 local TInsert = table.insert
+local TRemove = table.remove
 local TSort = table.sort
+local ipairs = ipairs
+local pairs = pairs
 
 local auctionTable = {}
 local auctionTableLoaded = false
@@ -285,15 +290,51 @@ local function OnAuctionData(criteria, auctions)
 				for auctionID in pairs(auctions) do
 					if cachedAuctions[auctionID] then
 						TInsert(knownAuctions, auctionID)
+						Release()
 					end
 				end
 			end
 			
+			local sortFunction = nil
 			if criteria.sortOrder == "descending" then
-				TSort(knownAuctions, function(a,b) return auctions[a] < auctions[b] end)
+				sortFunction = function(a, b) return auctions[a] < auctions[b] end
 			else
-				TSort(knownAuctions, function(a,b) return auctions[b] < auctions[a] end)
+				sortFunction = function(a, b) return auctions[b] < auctions[a] end
 			end
+			
+			local knownAuctionsPages = {}
+			for index, auctionID in ipairs(knownAuctions) do
+				local page = MFloor(index / PAGESIZE) + 1
+				knownAuctionsPages[page] = knownAuctionsPages[page] or {}
+				TInsert(knownAuctionsPages[page], auctionID)
+				Release()
+			end
+			
+			for _, page in pairs(knownAuctionsPages) do
+				TSort(page, sortFunction)
+				Release()
+			end
+			
+			knownAuctions = {}
+			repeat
+				local minPageIndex = nil
+				
+				for pageIndex, page in pairs(knownAuctionsPages) do
+					if #page > 0 then
+						if not minPageIndex or sortFunction(page[1], knownAuctionsPages[minPageIndex][1]) then
+							minPageIndex = pageIndex
+						end
+					end
+				end
+				
+				if minPageIndex then
+					TInsert(knownAuctions, knownAuctionsPages[minPageIndex][1])
+					TRemove(knownAuctionsPages[minPageIndex], 1)
+				end
+				
+				Release()
+			until not minPageIndex
+			
 			for index = 2, #knownAuctions, 1 do
 				local auctionID = knownAuctions[index]
 				local prevAuctionID = knownAuctions[index - 1]
@@ -331,6 +372,9 @@ TInsert(Event.Auction.Scan, { OnAuctionData, addonID, addonID .. ".Scanner.OnAuc
 
 local function LoadAuctionTable(addonId)
 	if addonId == addonID then
+		LibPGCDump = {}
+		LibPGCDump[1] = LibPGCDump
+		
 		if type(_G[addonID .. "AuctionTable"]) == "table" then
 			auctionTable = _G[addonID .. "AuctionTable"]
 		else
