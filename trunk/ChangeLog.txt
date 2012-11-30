@@ -1,3 +1,7 @@
+	Beta 0.4.4 RC3
+- Fixed a bug that emptied saved variables when the auction DB had over 65k auctions stored
+- Fixed a bug that crashed the addon when scanning more than 50k auctions in a full scan
+
 	r6
 - Added auto unjam feature (best effort behavior)
 

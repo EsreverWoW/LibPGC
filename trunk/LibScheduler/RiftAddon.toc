@@ -11,10 +11,10 @@ Description =
 	English = "A scheduler library for async execution.",
 }
 Author = "Baanano"
-Version = "0.4.4"
+Version = "0.4.4 RC3"
 Email = "baanano.rift@gmail.com"
 Website = "http://www.bananah.net/"
-Environment = "1.10"
+Environment = "2.0"
 RunOnStartup =
 {
 	"Scheduler.lua",
