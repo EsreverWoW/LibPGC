@@ -11,14 +11,13 @@ Description =
 	English = "LibPGC is a Rift Addon Library that extends AH functionality.",
 }
 Author = "Baanano"
-Version = "0.4.4 RC3"
+Version = "0.4.4 RC4"
 Email = "baanano.rift@gmail.com"
 Website = "http://www.bananah.net/"
-Environment = "2.0"
+Environment = "2.1"
 SavedVariables =
 {
 	LibPGCAuctionTable = "shard",
-	LibPGCDump = "shard",
 }
 Embed =
 {
@@ -31,6 +30,10 @@ Dependencies =
 RunOnStartup =
 {
 	"Utility.lua",
+	"Version.lua",
+	"DataModel/v1.lua",
+	"DataModel/v2.lua",
+	"Migration/v1-to-v2.lua",
 	"NativeIndexer.lua",
 	"Scanner.lua",
 	"PostQueue.lua",

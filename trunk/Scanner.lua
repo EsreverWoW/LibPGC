@@ -14,8 +14,8 @@ local addonID = addonInfo.identifier
 _G[addonID] = _G[addonID] or {}
 local PublicInterface = _G[addonID]
 
-local MAX_DATA_AGE = 30 * 24 * 60 * 60
 local PAGESIZE = 1000
+local ITEM, ACTIVE, EXPIRED = 1, 2, 3
 
 local CreateTask = LibScheduler.CreateTask
 local GetPlayerName = InternalInterface.Utility.GetPlayerName
@@ -31,15 +31,19 @@ local TInsert = table.insert
 local TRemove = table.remove
 local TSort = table.sort
 local ipairs = ipairs
+local next = next
 local pairs = pairs
+local pcall = pcall
+local tonumber = tonumber
 
-local auctionTable = {}
-local auctionTableLoaded = false
+local dataModel = nil
+local loadComplete = false
 
 local cachedAuctions = {}
 local cachedItemTypes = {}
 
 local alreadyMatched = {}
+local pendingAuctions = {}
 local pendingPosts = {}
 
 local nativeIndexer = InternalInterface.Indexers.BuildNativeIndexer()
@@ -49,42 +53,57 @@ local lastTask = nil
 
 local AuctionDataEvent = Utility.Event.Create(addonID, "AuctionData")
 
-InternalInterface.Scanner = InternalInterface.Scanner or {}
+local RARITIES_C2N = { "sellable", "common", "uncommon", "rare", "epic", "relic", "transcendant", "quest", }
+local RARITIES_N2C = { sellable = 1, [""] = 2, common = 2, uncommon = 3, rare = 4, epic = 5, relic = 6, transcendant = 7, quest = 8, }
 
 local function TryMatchAuction(auctionID)
 	if alreadyMatched[auctionID] then return end
 	
 	local itemType = cachedAuctions[auctionID]
 	local pending = itemType and pendingPosts[itemType] or nil
-	local itemInfo = auctionTable[itemType]
-	local auctionInfo = itemInfo and itemInfo.activeAuctions[auctionID] or nil
 	
-	if not pending or not auctionInfo then return end
+	local bid = dataModel:RetrieveAuctionBid(itemType, auctionID)
+	local buy = dataModel:RetrieveAuctionBuy(itemType, auctionID)
+	
+	if not pending or not bid then return end
 	
 	for index, pendingData in ipairs(pending) do
-		if not pendingData.matched and pendingData.bid == auctionInfo.bid and pendingData.buy == auctionInfo.buy then
-			auctionTable[itemType].activeAuctions[auctionID].minExpire = pendingData.timestamp + pendingData.tim * 3600 
-			auctionTable[itemType].activeAuctions[auctionID].maxExpire = auctionInfo.firstSeen + pendingData.tim * 3600 
+		if not pendingData.matched and pendingData.bid == bid and pendingData.buy == buy then
+			local firstSeen = dataModel:RetrieveAuctionFirstSeen(itemType, auctionID)
+			
+			dataModel:ModifyAuctionMinExpire(itemType, auctionID, pendingData.timestamp + pendingData.tim * 3600)
+			dataModel:ModifyAuctionMaxExpire(itemType, auctionID, firstSeen + pendingData.tim * 3600)
+			
 			pendingPosts[itemType][index].matched = true
 			alreadyMatched[auctionID] = true
 			return
 		end
 	end
-	auctionTable[itemType].activeAuctions[auctionID].postPending = true
+	
+	pendingAuctions[itemType] = pendingAuctions[itemType] or {}
+	pendingAuctions[itemType][auctionID] = true
 end
 
 local function TryMatchPost(itemType, tim, timestamp, bid, buyout)
-	local itemInfo = auctionTable[itemType]
-	local auctions = itemInfo and itemInfo.activeAuctions or {}
-	for auctionID, auctionInfo in pairs(auctions) do
-		if auctionInfo.postPending and bid == auctionInfo.bid and buyout == auctionInfo.buy then
-			auctionTable[itemType].activeAuctions[auctionID].minExpire = timestamp + tim * 3600 
-			auctionTable[itemType].activeAuctions[auctionID].maxExpire = auctionInfo.firstSeen + tim * 3600 
-			auctionTable[itemType].activeAuctions[auctionID].postPending = nil
-			alreadyMatched[auctionID] = true
-			return
+	local auctions = pendingAuctions[itemType] or {}
+	for auctionID in pairs(auctions) do
+		if not alreadyMatched[auctionID] then
+			local auctionBid = dataModel:RetrieveAuctionBid(itemType, auctionID)
+			local auctionBuy = dataModel:RetrieveAuctionBuy(itemType, auctionID)
+			
+			if bid == auctionBid and (buyout or 0) == auctionBuy then
+				local firstSeen = dataModel:RetrieveAuctionFirstSeen(itemType, auctionID)
+				
+				dataModel:ModifyAuctionMinExpire(itemType, auctionID, timestamp + tim * 3600)
+				dataModel:ModifyAuctionMaxExpire(itemType, auctionID, firstSeen + tim * 3600)
+				
+				pendingAuctions[itemType][auctionID] = nil
+				alreadyMatched[auctionID] = true
+				return
+			end
 		end
 	end
+
 	pendingPosts[itemType] = pendingPosts[itemType] or {}
 	TInsert(pendingPosts[itemType], { tim = tim, timestamp = timestamp, bid = bid, buy = buyout or 0 })
 end
@@ -104,58 +123,39 @@ local function OnAuctionData(criteria, auctions)
 	local playerName = GetPlayerName()
 	
 	local function ProcessItemType(itemType)
+		totalItemTypes[itemType] = true
 		if cachedItemTypes[itemType] then return end
 		
 		local itemDetail = IIDetail(itemType)
 
-		local name, icon, rarity, level = itemDetail.name, itemDetail.icon, itemDetail.rarity or "", itemDetail.requiredLevel or 1
+		local name, icon, rarity, level = itemDetail.name, itemDetail.icon, RARITIES_N2C[itemDetail.rarity or ""], itemDetail.requiredLevel or 1
 		local category, callings = itemDetail.category or "", itemDetail.requiredCalling
 		callings =
 		{
-			warrior = (not callings or callings:find("warrior")) and true or nil,
-			cleric = (not callings or callings:find("cleric")) and true or nil,
-			rogue = (not callings or callings:find("rogue")) and true or nil,
-			mage = (not callings or callings:find("mage")) and true or nil,
+			warrior = (not callings or callings:find("warrior")) and true or false,
+			cleric = (not callings or callings:find("cleric")) and true or false,
+			rogue = (not callings or callings:find("rogue")) and true or false,
+			mage = (not callings or callings:find("mage")) and true or false,
 		}
 		
-		if not auctionTable[itemType] then
-			auctionTable[itemType] =
-			{
-				name = name,
-				icon = icon,
-				rarity = rarity,
-				level = level,
-				category = category,
-				callings = callings,
-				activeAuctions = {},
-				expiredAuctions = {},
-			}
+		if not dataModel:CheckItemExists(itemType) then
+			dataModel:StoreItem(itemType, name, icon, category, level, callings, rarity, auctionScanTime)
 		else
-			local oldData = auctionTable[itemType]
-			
-			local oldName = oldData.name
-			local oldIcon = oldData.icon
-			local oldRarity = oldData.rarity
-			local oldLevel = oldData.level
-			local oldCategory = oldData.category
-			local oldCallings = oldData.callings
-			
-			if name ~= oldName or icon ~= oldIcon or rarity ~= oldRarity  or level ~= oldLevel or category ~= oldCategory or callings.warrior ~= oldCallings.warrior or callings.cleric ~= oldCallings.cleric or callings.rogue ~= oldCallings.rogue or callings.mage ~= oldCallings.mage then
-				auctionTable[itemType].name = name
-				auctionTable[itemType].icon = icon
-				auctionTable[itemType].rarity = rarity
-				auctionTable[itemType].level = level
-				auctionTable[itemType].category = category
-				auctionTable[itemType].callings = callings
-
-				for auctionID, auctionData in pairs(oldData.activeAuctions) do
-					nativeIndexer:RemoveAuction(auctionID, oldCallings, oldRarity, oldLevel, oldCategory, oldName, auctionData.buy)
-					nativeIndexer:AddAuction(itemType, auctionID, callings, rarity, level, category, name, auctionData.buy)
+			local storedName, storedIcon, storedCategory, storedLevel, storedCallings, storedRarity = dataModel:RetrieveItemData(itemType)
+			if name ~= storedName or icon ~= storedIcon or category ~= storedCategory or level ~= storedLevel or callings.warrior ~= storedCallings.warrior or callings.cleric ~= storedCallings.cleric or callings.rogue ~= storedCallings.rogue or callings.mage ~= storedCallings.mage or rarity ~= storedRarity then
+				for auctionID in pairs(dataModel:RetrieveActiveAuctions(itemType)) do
+					local price = dataModel:RetrieveAuctionBuy(itemType, auctionID)
+					
+					nativeIndexer:RemoveAuction(auctionID, storedCallings, storedRarity, storedLevel, storedCategory, storedName, price)
+					nativeIndexer:AddAuction(itemType, auctionID, callings, rarity, level, category, name, price)
 				end
 				
+				dataModel:StoreItem(itemType, name, icon, category, level, callings, rarity, auctionScanTime)
 				modifiedItemTypes[itemType] = true
+			else
+				dataModel:ModifyItemLastSeen(itemType, auctionScanTime)
 			end
-		end		
+		end
 		
 		cachedItemTypes[itemType] = true
 	end
@@ -164,57 +164,66 @@ local function OnAuctionData(criteria, auctions)
 		local itemType = auctionDetail.itemType
 		
 		ProcessItemType(itemType)
-		auctionTable[itemType].lastSeen = auctionScanTime
 		cachedAuctions[auctionID] = itemType
 		
 		TInsert(totalAuctions, auctionID)
-		totalItemTypes[itemType] = true
 		
-		local auctionData = auctionTable[itemType].activeAuctions[auctionID]
-		if not auctionData then
-			local itemTypeData = auctionTable[itemType]
-			itemTypeData.activeAuctions[auctionID] = 
-			{
-				stack = auctionDetail.itemStack or 1,
-				bid = auctionDetail.bid,
-				buy = auctionDetail.buyout or 0,
-				seller = auctionDetail.seller,
-				firstSeen = auctionScanTime,
-				lastSeen = auctionScanTime,
-				minExpire = expireTimes[auctionDetail.time][1],
-				maxExpire = expireTimes[auctionDetail.time][2],
-				own = auctionDetail.seller == playerName and true or nil,
-				bidded = auctionDetail.bidder and auctionDetail.bidder ~= "0" and true or nil,
-				ownBidded = auctionDetail.bidder and auctionDetail.bidder == playerName and auctionDetail.bid or 0,
-			}
-			auctionData = itemTypeData.activeAuctions[auctionID]
-			
+		if not dataModel:CheckAuctionActive(itemType, auctionID) then
+			dataModel:StoreAuction(itemType, auctionID, true, auctionDetail.seller,
+			                       auctionDetail.bid, auctionDetail.buyout or 0, auctionDetail.bidder and auctionDetail.bidder == playerName and auctionDetail.bid or 0,
+							       auctionScanTime, auctionScanTime, expireTimes[auctionDetail.time][1], expireTimes[auctionDetail.time][2],
+							       auctionDetail.itemStack or 1,
+								   {
+									own = auctionDetail.seller == playerName and true or false,
+									bidded = auctionDetail.bidder and auctionDetail.bidder ~= "0" and true or false,
+									beforeExpiration = false,
+									ownBought = false,
+									cancelled = false,
+								   })
+
 			TInsert(newAuctions, auctionID)
 			newItemTypes[itemType] = true
 			
-			nativeIndexer:AddAuction(itemType, auctionID, itemTypeData.callings, itemTypeData.rarity, itemTypeData.level, itemTypeData.category, itemTypeData.name, auctionDetail.buyout or 0)
+			local itemName, _, category, level, callings, rarity = dataModel:RetrieveItemData(itemType)
+			nativeIndexer:AddAuction(itemType, auctionID, callings, rarity, level, category, itemName, auctionDetail.buyout or 0)
 			
 			if auctionDetail.seller == playerName then
+				ownIndex[auctionID] = itemType
 				TryMatchAuction(auctionID)
 			end
 		else
-			auctionData.lastSeen = auctionScanTime
-			auctionData.minExpire = MMax(auctionData.minExpire, expireTimes[auctionDetail.time][1])
-			auctionData.maxExpire = MMin(auctionData.maxExpire, expireTimes[auctionDetail.time][2])
-			auctionData.own = auctionData.own or auctionDetail.seller == playerName or nil
-			auctionData.bidded = auctionData.bidded or (auctionDetail.bidder and auctionDetail.bidder ~= "0") or nil
+			dataModel:ModifyAuctionLastSeen(itemType, auctionID, auctionScanTime)
+
+			local minExpire = dataModel:RetrieveAuctionMinExpire(itemType, auctionID)
+			if expireTimes[auctionDetail.time][1] > minExpire then
+				dataModel:ModifyAuctionMinExpire(itemType, auctionID, expireTimes[auctionDetail.time][1])
+			end
 			
-			if auctionDetail.bidder and auctionDetail.bidder == playerName then auctionData.ownBidded = auctionDetail.bid end
+			local maxExpire = dataModel:RetrieveAuctionMaxExpire(itemType, auctionID)
+			if expireTimes[auctionDetail.time][2] < maxExpire then
+				dataModel:ModifyAuctionMaxExpire(itemType, auctionID, expireTimes[auctionDetail.time][2])
+			end
 			
-			if auctionDetail.bid > auctionData.bid then
-				auctionData.bid = auctionDetail.bid
-				auctionData.bidded = true
+			if auctionDetail.bidder and auctionDetail.bidder == playerName then
+				dataModel:ModifyAuctionOwnBid(itemType, auctionID, auctionDetail.bid)
+			end
+			
+			local flags = dataModel:RetrieveAuctionFlags(itemType, auctionID)
+			flags.own = flags.own or auctionDetail.seller == playerName or false
+			flags.bidded = flags.bidded or (auctionDetail.bidder and auctionDetail.bidder ~= "0") or false
+
+			local bid = dataModel:RetrieveAuctionBid(itemType, auctionID)
+			if auctionDetail.bid > bid then
+				flags.bidded = true
 				TInsert(updatedAuctions, auctionID)
 				updatedItemTypes[itemType] = true
-			end			
+				dataModel:ModifyAuctionBid(itemType, auctionID, auctionDetail.bid)
+			end
+			
+			dataModel:ModifyAuctionFlags(itemType, auctionID, flags)
+			
+			if flags.own then ownIndex[auctionID] = itemType end
 		end
-		
-		if auctionData.own then ownIndex[auctionID] = itemType end
 	end
 	
 	local function ProcessAuctions()
@@ -237,46 +246,57 @@ local function OnAuctionData(criteria, auctions)
 			else
 				auctionCount = #totalAuctions
 			end
+			
 			if not criteria.index or (criteria.index == 0 and auctionCount < 50) then
-				local matchingAuctions = nativeIndexer:Search(criteria.role, criteria.rarity, criteria.levelMin, criteria.levelMax, criteria.category, criteria.priceMin, criteria.priceMax, criteria.text)
+				local matchingAuctions = nativeIndexer:Search(criteria.role, criteria.rarity and RARITIES_N2C[criteria.rarity], criteria.levelMin, criteria.levelMax, criteria.category, criteria.priceMin, criteria.priceMax, criteria.text)
 				for auctionID, itemType in pairs(matchingAuctions) do
 					if not auctions[auctionID] then
-						local itemData = auctionTable[itemType]
-						local auctionData = itemData.activeAuctions[auctionID]
-
 						TInsert(removedAuctions, auctionID)
 						removedItemTypes[itemType] = true
-						if auctionScanTime < auctionData.minExpire then
-							auctionData.beforeExpiration = true
+					
+						local minExpire = dataModel:RetrieveAuctionMinExpire(itemType, auctionID)
+						if auctionScanTime < minExpire then
+							local flags = dataModel:RetrieveAuctionFlags(itemType, auctionID)
+							flags.beforeExpiration = true
+							dataModel:ModifyAuctionFlags(itemType, auctionID, flags)
+							
 							TInsert(beforeExpireAuctions, auctionID)
 						end
 						
-						nativeIndexer:RemoveAuction(auctionID, itemData.callings, itemData.rarity, itemData.level, itemData.category, itemData.name, auctionData.buy)
+						local itemName, _, category, level, callings, rarity = dataModel:RetrieveItemData(itemType)
+						local price = dataModel:RetrieveAuctionBuy(itemType, auctionID)
+						nativeIndexer:RemoveAuction(auctionID, callings, rarity, level, category, itemName, price)
 						ownIndex[auctionID] = nil
 						
-						itemData.expiredAuctions[auctionID] = auctionData
-						itemData.activeAuctions[auctionID] = nil
+						dataModel:ExpireAuction(itemType, auctionID)
 					end
 					Release()
 				end
 			end
 		elseif criteria.type == "mine" then
 			for auctionID, itemType in pairs(ownIndex) do
-				local itemData = auctionTable[itemType]
-				local auctionData = itemData.activeAuctions[auctionID]
-				if not auctions[auctionID] and auctionData.seller == playerName then
-					TInsert(removedAuctions, auctionID)
-					removedItemTypes[itemType] = true
-					if auctionScanTime < auctionData.minExpire then
-						auctionData.beforeExpiration = true
-						TInsert(beforeExpireAuctions, auctionID)
+				if not auctions[auctionID] then
+					local seller = dataModel:RetrieveAuctionSeller(itemType, auctionID)
+					if seller == playerName then
+						TInsert(removedAuctions, auctionID)
+						removedItemTypes[itemType] = true
+						
+						local minExpire = dataModel:RetrieveAuctionMinExpire(itemType, auctionID)
+						if auctionScanTime < minExpire then
+							local flags = dataModel:RetrieveAuctionFlags(itemType, auctionID)
+							flags.beforeExpiration = true
+							dataModel:ModifyAuctionFlags(itemType, auctionID, flags)
+							
+							TInsert(beforeExpireAuctions, auctionID)						
+						end
+						
+						local itemName, _, category, level, callings, rarity = dataModel:RetrieveItemData(itemType)
+						local price = dataModel:RetrieveAuctionBuy(itemType, auctionID)
+						nativeIndexer:RemoveAuction(auctionID, callings, rarity, level, category, itemName, price)
+						ownIndex[auctionID] = nil
+						
+						dataModel:ExpireAuction(itemType, auctionID)						
 					end
-					
-					nativeIndexer:RemoveAuction(auctionID, itemData.callings, itemData.rarity, itemData.level, itemData.category, itemData.name, auctionData.buy)
-					ownIndex[auctionID] = nil
-					
-					itemData.expiredAuctions[auctionID] = auctionData
-					itemData.activeAuctions[auctionID] = nil
 				end
 				Release()
 			end
@@ -339,23 +359,24 @@ local function OnAuctionData(criteria, auctions)
 				local auctionID = knownAuctions[index]
 				local prevAuctionID = knownAuctions[index - 1]
 				
-				local auctionMET = auctionTable[cachedAuctions[auctionID]].activeAuctions[auctionID].minExpire
-				local prevAuctionMET = auctionTable[cachedAuctions[prevAuctionID]].activeAuctions[prevAuctionID].minExpire
+				local minExpire = dataModel:RetrieveAuctionMinExpire(cachedAuctions[auctionID], auctionID)
+				local previousMinExpire = dataModel:RetrieveAuctionMinExpire(cachedAuctions[prevAuctionID], prevAuctionID)
 				
-				if auctionMET < prevAuctionMET then
-					auctionTable[cachedAuctions[auctionID]].activeAuctions[auctionID].minExpire = prevAuctionMET
+				if minExpire < previousMinExpire then
+					dataModel:ModifyAuctionMinExpire(cachedAuctions[auctionID], auctionID, previousMinExpire)
 				end
 				Release()
 			end
+			
 			for index = #knownAuctions - 1, 1, -1 do
 				local auctionID = knownAuctions[index]
 				local nextAuctionID = knownAuctions[index + 1]
+
+				local maxExpire = dataModel:RetrieveAuctionMaxExpire(cachedAuctions[auctionID], auctionID)
+				local nextMaxExpire = dataModel:RetrieveAuctionMaxExpire(cachedAuctions[nextAuctionID], nextAuctionID)
 				
-				local auctionXET = auctionTable[cachedAuctions[auctionID]].activeAuctions[auctionID].maxExpire
-				local nextAuctionXET = auctionTable[cachedAuctions[nextAuctionID]].activeAuctions[nextAuctionID].maxExpire
-				
-				if auctionXET > nextAuctionXET then
-					auctionTable[cachedAuctions[auctionID]].activeAuctions[auctionID].maxExpire = nextAuctionXET
+				if maxExpire > nextMaxExpire then
+					dataModel:ModifyAuctionMaxExpire(cachedAuctions[auctionID], auctionID, nextMaxExpire)
 				end
 				Release()
 			end
@@ -372,150 +393,150 @@ TInsert(Event.Auction.Scan, { OnAuctionData, addonID, addonID .. ".Scanner.OnAuc
 
 local function LoadAuctionTable(addonId)
 	if addonId == addonID then
-		LibPGCDump = {}
-		LibPGCDump[1] = LibPGCDump
+		local rawData = _G[addonID .. "AuctionTable"]
+
+		lastTask = CreateTask(
+		function()
+			print("LibPGC: Loading auction database...")
 		
-		if type(_G[addonID .. "AuctionTable"]) == "table" then
-			auctionTable = _G[addonID .. "AuctionTable"]
-		else
-			auctionTable = {}
-		end
-
-		for itemType, itemData in pairs(auctionTable) do
-			if itemData.activeAuctions then
-				for auctionID, auctionData in pairs(itemData.activeAuctions) do
-					nativeIndexer:AddAuction(itemType, auctionID, itemData.callings, itemData.rarity, itemData.level, itemData.category, itemData.name, auctionData.buy)
-					if auctionData.own then ownIndex[auctionID] = itemType end
+			dataModel = InternalInterface.Version.LoadDataModel(rawData)
+			Release()
+			
+			print("LibPGC: Indexing active auctions...")
+			
+			for itemType in pairs(dataModel:RetrieveAllItems()) do
+				local activeAuctions = dataModel:RetrieveActiveAuctions(itemType)
+				if activeAuctions and next(activeAuctions) then
+					local name, _, category, level, callings, rarity = dataModel:RetrieveItemData(itemType)
+					for auctionID in pairs(activeAuctions) do
+						local price = dataModel:RetrieveAuctionBuy(itemType, auctionID)
+						local flags = dataModel:RetrieveAuctionFlags(itemType, auctionID)
+						
+						nativeIndexer:AddAuction(itemType, auctionID, callings, rarity, level, category, name, price)
+						if flags.own then ownIndex[auctionID] = itemType end
+						Release()
+					end
 				end
-			else
-				auctionTable = {}
-				break
+				Release()
 			end
-		end
-
-		auctionTableLoaded = true
+			
+			loadComplete = dataModel and true
+			
+			print("LibPGC: Ready!")
+		end, nil, nil, lastTask) or lastTask
 	end
 end
 TInsert(Event.Addon.SavedVariables.Load.End, {LoadAuctionTable, addonID, addonID .. ".Scanner.LoadAuctionData"})
 
 local function SaveAuctionTable(addonId)
-	if addonId == addonID and auctionTableLoaded then
-		local purgeTime = Time() - MAX_DATA_AGE
-		
-		for itemType, itemData in pairs(auctionTable) do
-			local hasAuctions = false
-			for auctionID, auctionData in pairs(itemData.activeAuctions) do
-				auctionData.postPending = nil
-				hasAuctions = true
-				break
-			end
-			for auctionID, auctionData in pairs(itemData.expiredAuctions) do
-				if auctionData.lastSeen < purgeTime then
-					auctionTable[itemType].expiredAuctions[auctionID] = nil
-				else
-					hasAuctions = true
-				end
-			end
-			if not hasAuctions then
-				auctionTable[itemType] = nil
-			end
-		end
-		
-		_G[addonID .. "AuctionTable"] = auctionTable
+	if addonId == addonID and loadComplete then
+		local rawData = dataModel:GetRawData()
+		_G[addonID .. "AuctionTable"] = rawData
 	end
 end
 TInsert(Event.Addon.SavedVariables.Save.Begin, {SaveAuctionTable, addonID, addonID .. ".Scanner.SaveAuctionData"})
 
 local function ProcessAuctionBuy(auctionID)
 	local itemType = cachedAuctions[auctionID]
-	local itemInfo = itemType and auctionTable[itemType] or nil
-	local auctionInfo = itemInfo and itemInfo.activeAuctions[auctionID] or nil
+
+	local name, _, category, level, callings, rarity = dataModel:RetrieveItemData(itemType)
+	local price = dataModel:RetrieveAuctionBuy(itemType, auctionID)
+	if not name or not price then return end
 	
-	if auctionInfo then
-		nativeIndexer:RemoveAuction(auctionID, itemInfo.callings, itemInfo.rarity, itemInfo.level, itemInfo.category, itemInfo.name, auctionInfo.buy)
-		ownIndex[auctionID] = nil
-		
-		auctionInfo.ownBought = true
-		auctionInfo.beforeExpiration = true
-		
-		itemInfo.expiredAuctions[auctionID] = auctionInfo
-		itemInfo.activeAuctions[auctionID] = nil
-		
-		AuctionDataEvent("playerbuy", {auctionID}, {}, {}, {auctionID}, {auctionID}, {[itemType] = true}, {}, {}, {[itemType] = true}, {})
-	end
+	nativeIndexer:RemoveAuction(auctionID, callings, rarity, level, category, name, price)
+	ownIndex[auctionID] = nil
+	
+	local flags = dataModel:RetrieveAuctionFlags(itemType, auctionID)
+	flags.ownBought = true
+	flags.beforeExpiration = true
+	dataModel:ModifyAuctionFlags(itemType, auctionID, flags)
+	
+	dataModel:ExpireAuction(itemType, auctionID)
+	
+	AuctionDataEvent("playerbuy", {auctionID}, {}, {}, {auctionID}, {auctionID}, {[itemType] = true}, {}, {}, {[itemType] = true}, {})
 end
 
 local function ProcessAuctionBid(auctionID, amount)
 	local itemType = cachedAuctions[auctionID]
-	local itemInfo = itemType and auctionTable[itemType] or nil
-	local auctionInfo = itemInfo and itemInfo.activeAuctions[auctionID] or nil
 	
-	if auctionInfo then
-		if auctionInfo.buy and auctionInfo.buy > 0 and amount >= auctionInfo.buy then
-			ProcessAuctionBuy(auctionID)
-		else
-			auctionInfo.bidded = true
-			auctionInfo.bid = amount
-			auctionInfo.ownBidded = amount
-			AuctionDataEvent("playerbid", {auctionID}, {}, {auctionID}, {}, {}, {[itemType] = true}, {}, {[itemType] = true}, {}, {})
-		end
+	local price = dataModel:RetrieveAuctionBuy(itemType, auctionID)
+	if not price then return end
+
+	if price > 0 and amount >= price then
+		ProcessAuctionBuy(auctionID)
+	else
+		dataModel:ModifyAuctionBid(itemType, auctionID, amount)
+		dataModel:ModifyAuctionOwnBid(itemType, auctionID, amount)
+	
+		local flags = dataModel:RetrieveAuctionFlags(itemType, auctionID)
+		flags.bidded = true
+		dataModel:ModifyAuctionFlags(itemType, auctionID, flags)
+		
+		AuctionDataEvent("playerbid", {auctionID}, {}, {auctionID}, {}, {}, {[itemType] = true}, {}, {[itemType] = true}, {}, {})
 	end
 end
 
 local function ProcessAuctionCancel(auctionID)
 	local itemType = cachedAuctions[auctionID]
-	local itemInfo = itemType and auctionTable[itemType] or nil
-	local auctionInfo = itemInfo and itemInfo.activeAuctions[auctionID] or nil
+	
+	local name, _, category, level, callings, rarity = dataModel:RetrieveItemData(itemType)
+	local price = dataModel:RetrieveAuctionBuy(itemType, auctionID)
+	if not name or not price then return end
+	
+	nativeIndexer:RemoveAuction(auctionID, callings, rarity, level, category, name, price)
+	ownIndex[auctionID] = nil
 
-	if auctionInfo then
-		nativeIndexer:RemoveAuction(auctionID, itemInfo.callings, itemInfo.rarity, itemInfo.level, itemInfo.category, itemInfo.name, auctionInfo.buy)
-		ownIndex[auctionID] = nil
-		
-		auctionInfo.cancelled = true
-		auctionInfo.beforeExpiration = true
-		
-		itemInfo.expiredAuctions[auctionID] = auctionInfo
-		itemInfo.activeAuctions[auctionID] = nil
-		
-		AuctionDataEvent("playercancel", {auctionID}, {}, {}, {auctionID}, {auctionID}, {[itemType] = true}, {}, {}, {[itemType] = true}, {})
-	end
+	local flags = dataModel:RetrieveAuctionFlags(itemType, auctionID)
+	flags.cancelled = true
+	flags.beforeExpiration = true
+	dataModel:ModifyAuctionFlags(itemType, auctionID, flags)
+	
+	dataModel:ExpireAuction(itemType, auctionID)
+	
+	AuctionDataEvent("playercancel", {auctionID}, {}, {}, {auctionID}, {auctionID}, {[itemType] = true}, {}, {}, {[itemType] = true}, {})
 end
 
 local function GetAuctionData(itemType, auctionID)
+	if not loadComplete then return nil end
+
 	itemType = itemType or (auctionID and cachedAuctions[auctionID])
-	if not itemType or not auctionTable[itemType] then return nil end
+	if not itemType or not dataModel:CheckItemExists(itemType) then return nil end
 	
-	local auctionData = auctionTable[itemType].activeAuctions[auctionID] or auctionTable[itemType].expiredAuctions[auctionID]
-	if not auctionData then return nil end
+	local itemName = dataModel:RetrieveItemName(itemType)
+	local itemIcon = dataModel:RetrieveItemIcon(itemType)
+	local rarity = dataModel:RetrieveItemRarity(itemType)
+
+	local seller, bid, buy, ownBidded, firstSeen, lastSeen, minExpire, maxExpire, stacks, flags, active = dataModel:RetrieveAuctionData(itemType, auctionID)
+	if not seller then return nil end
 	
 	return
 	{
-		active = auctionTable[itemType].activeAuctions[auctionID] and true or false,
+		active = active,
 		itemType = itemType,
-		itemName = auctionTable[itemType].name,
-		itemIcon = auctionTable[itemType].icon,
-		itemRarity = auctionTable[itemType].rarity,
-		stack = auctionData.stack,
-		bidPrice = auctionData.bid,
-		buyoutPrice = auctionData.buy ~= 0 and auctionData.buy or nil,
-		bidUnitPrice = auctionData.bid / auctionData.stack,
-		buyoutUnitPrice = auctionData.buy ~= 0 and (auctionData.buy / auctionData.stack) or nil,
-		sellerName = auctionData.seller,
-		firstSeenTime = auctionData.firstSeen,
-		lastSeenTime = auctionData.lastSeen,
-		minExpireTime = auctionData.minExpire,
-		maxExpireTime = auctionData.maxExpire,
-		own = auctionData.own or false,
-		bidded = auctionData.bidded or false,
-		removedBeforeExpiration = auctionData.beforeExpiration or false,
-		ownBidded = auctionData.ownBidded,
-		ownBought = auctionData.ownBought or false,
-		cancelled = auctionData.cancelled or false,
+		itemName = itemName,
+		itemIcon = itemIcon,
+		itemRarity = RARITIES_C2N[rarity],
+		stack = stacks,
+		bidPrice = bid,
+		buyoutPrice = buy ~= 0 and buy or nil,
+		ownBidded = ownBidded,
+		bidUnitPrice = bid / stacks,
+		buyoutUnitPrice = buy ~= 0 and (buy / stacks) or nil,
+		sellerName = seller,
+		firstSeenTime = firstSeen,
+		lastSeenTime = lastSeen,
+		minExpireTime = minExpire,
+		maxExpireTime = maxExpire,
+		own = flags.own,
+		bidded = flags.bidded,
+		removedBeforeExpiration = flags.beforeExpiration,
+		ownBought = flags.ownBought,
+		cancelled = flags.cancelled,
 	}
 end
 
 local function SearchAuctionsAsync(calling, rarity, levelMin, levelMax, category, priceMin, priceMax, name)
-	local auctions = nativeIndexer:Search(calling, rarity, levelMin, levelMax, category, priceMin, priceMax, name)
+	local auctions = nativeIndexer:Search(calling, rarity and RARITIES_N2C[rarity] or nil, levelMin, levelMax, category, priceMin, priceMax, name)
 	for auctionID, itemType in pairs(auctions) do
 		auctions[auctionID] = GetAuctionData(itemType, auctionID)
 		Release()
@@ -530,8 +551,8 @@ local function GetAuctionDataAsync(item, startTime, endTime, excludeExpired)
 	endTime = endTime or Time()
 	
 	if not item then
-		for itemType, itemInfo in pairs(auctionTable) do
-			for auctionID in pairs(itemInfo.activeAuctions) do
+		for itemType in pairs(dataModel:RetrieveAllItems()) do
+			for auctionID in pairs(dataModel:RetrieveActiveAuctions(itemType)) do
 				local auctionData = GetAuctionData(itemType, auctionID)
 				if auctionData and auctionData.lastSeenTime >= startTime and auctionData.firstSeenTime <= endTime then
 					auctions[auctionID] = auctionData
@@ -540,7 +561,7 @@ local function GetAuctionDataAsync(item, startTime, endTime, excludeExpired)
 			end
 			
 			if not excludeExpired then
-				for auctionID in pairs(itemInfo.expiredAuctions) do
+				for auctionID in pairs(dataModel:RetrieveExpiredAuctions(itemType)) do
 					local auctionData = GetAuctionData(itemType, auctionID)
 					if auctionData and auctionData.lastSeenTime >= startTime and auctionData.firstSeenTime <= endTime then
 						auctions[auctionID] = auctionData
@@ -558,10 +579,9 @@ local function GetAuctionDataAsync(item, startTime, endTime, excludeExpired)
 			itemType = ok and itemDetail and itemDetail.type or nil
 		end
 		
-		local itemInfo = itemType and auctionTable[itemType] or nil
-		if not itemInfo then return {} end
+		if not dataModel:CheckItemExists(itemType) then return {} end
 		
-		for auctionID in pairs(itemInfo.activeAuctions) do
+		for auctionID in pairs(dataModel:RetrieveActiveAuctions(itemType)) do
 			local auctionData = GetAuctionData(itemType, auctionID)
 			if auctionData and auctionData.lastSeenTime >= startTime and auctionData.firstSeenTime <= endTime then
 				auctions[auctionID] = auctionData
@@ -570,7 +590,7 @@ local function GetAuctionDataAsync(item, startTime, endTime, excludeExpired)
 		end
 		
 		if not excludeExpired then
-			for auctionID in pairs(itemInfo.expiredAuctions) do
+			for auctionID in pairs(dataModel:RetrieveExpiredAuctions(itemType)) do
 				local auctionData = GetAuctionData(itemType, auctionID)
 				if auctionData and auctionData.lastSeenTime >= startTime and auctionData.firstSeenTime <= endTime then
 					auctions[auctionID] = auctionData
@@ -647,11 +667,11 @@ function PublicInterface.GetOwnAuctionData(callback)
 end	
 
 function PublicInterface.GetAuctionCached(auctionID)
-	return cachedAuctions[auctionID] and true or false
+	return cachedAuctions[auctionID] and true or false -- TODO Consider moving this to GetAuctionData
 end
 
 function PublicInterface.GetLastTimeSeen(item)
-	if not item then return nil end
+	if not item or not loadComplete then return nil end
 
 	local itemType = nil
 	if item:sub(1, 1) == "I" then
@@ -660,8 +680,8 @@ function PublicInterface.GetLastTimeSeen(item)
 		local ok, itemDetail = pcall(IIDetail, item)
 		itemType = ok and itemDetail and itemDetail.type or nil
 	end
-	
-	return itemType and auctionTable[itemType] and auctionTable[itemType].lastSeen or nil 
+
+	return dataModel:RetrieveItemLastSeen(itemType)
 end	
 
 function PublicInterface.GetLastTask()

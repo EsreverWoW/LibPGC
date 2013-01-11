@@ -14,8 +14,6 @@ local addonID = addonInfo.identifier
 local Release = LibScheduler.Release
 local pairs = pairs
 
-local Rarities = { sellable = 1, [""] = 2, common = 2, uncommon = 3, rare = 4, epic = 5, relic = 6, transcendant = 7, quest = 8, }
-
 InternalInterface.Indexers = InternalInterface.Indexers or {}
 
 function InternalInterface.Indexers.BuildNativeIndexer()
@@ -26,16 +24,17 @@ function InternalInterface.Indexers.BuildNativeIndexer()
 	
 	function nativeIndexer:AddAuction(itemType, auctionID, callings, rarity, level, category, name, price)
 		name = name:upper()
-		rarity = Rarities[rarity] or 0
 		
-		for calling in pairs(callings) do
-			self.searchTree[calling] = self.searchTree[calling] or {}
-			self.searchTree[calling][rarity] = self.searchTree[calling][rarity] or {}
-			self.searchTree[calling][rarity][level] = self.searchTree[calling][rarity][level] or {}
-			self.searchTree[calling][rarity][level][category] = self.searchTree[calling][rarity][level][category] or {}
-			self.searchTree[calling][rarity][level][category][name] = self.searchTree[calling][rarity][level][category][name] or {}
-			self.searchTree[calling][rarity][level][category][name][price] = self.searchTree[calling][rarity][level][category][name][price] or {}
-			self.searchTree[calling][rarity][level][category][name][price][auctionID] = itemType
+		for calling, flag in pairs(callings) do
+			if flag then
+				self.searchTree[calling] = self.searchTree[calling] or {}
+				self.searchTree[calling][rarity] = self.searchTree[calling][rarity] or {}
+				self.searchTree[calling][rarity][level] = self.searchTree[calling][rarity][level] or {}
+				self.searchTree[calling][rarity][level][category] = self.searchTree[calling][rarity][level][category] or {}
+				self.searchTree[calling][rarity][level][category][name] = self.searchTree[calling][rarity][level][category][name] or {}
+				self.searchTree[calling][rarity][level][category][name][price] = self.searchTree[calling][rarity][level][category][name][price] or {}
+				self.searchTree[calling][rarity][level][category][name][price][auctionID] = itemType
+			end
 		end
 		
 		self.auctionIDs[auctionID] = itemType
@@ -45,10 +44,11 @@ function InternalInterface.Indexers.BuildNativeIndexer()
 		if not self.auctionIDs[auctionID] then return end
 		
 		name = name:upper()
-		rarity = Rarities[rarity] or 0
 		
-		for calling in pairs(callings) do
-			self.searchTree[calling][rarity][level][category][name][price][auctionID] = nil
+		for calling, flag in pairs(callings) do
+			if flag then
+				self.searchTree[calling][rarity][level][category][name][price][auctionID] = nil
+			end
 		end
 		
 		self.auctionIDs[auctionID] = nil
@@ -58,7 +58,6 @@ function InternalInterface.Indexers.BuildNativeIndexer()
 		local results = {}
 		
 		name = name and name:upper() or nil
-		rarity = rarity and Rarities[rarity] or nil
 		
 		for callingName, callingSubtree in pairs(self.searchTree) do
 			if not calling or calling == callingName then

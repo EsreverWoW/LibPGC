@@ -1,3 +1,8 @@
+	Beta 0.4.4 RC4
+- Added version and migration procedures to convert data from older versions to the latest format.
+- Reworked the data format to reduce the time it takes to save & load the auction DB.
+- LibPGC only stores 5 days of data now. This is a temporary fix to avoid crashing the game client when reloading/logging out.
+
 	Beta 0.4.4 RC3
 - Fixed a bug that emptied saved variables when the auction DB had over 65k auctions stored
 - Fixed a bug that crashed the addon when scanning more than 50k auctions in a full scan
