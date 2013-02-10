@@ -1,31 +1,53 @@
 -- ***************************************************************************************************************************************************
--- * v2.lua                                                                                                                                          *
+-- * v3.lua                                                                                                                                          *
 -- ***************************************************************************************************************************************************
--- * LibPGC DataModel v2                                                                                                                             *
+-- * LibPGC DataModel v3                                                                                                                             *
 -- ***************************************************************************************************************************************************
--- * 0.4.4 / 2013.01.02 / Baanano: First version                                                                                                     *
+-- * 0.4.4 / 2013.02.04 / Baanano: First version                                                                                                     *
 -- ***************************************************************************************************************************************************
 
 local addonInfo, InternalInterface = ...
 local addonID = addonInfo.identifier
 
 local CheckFlag = function(value, flag) return bit.band(value, flag) == flag end
+local Converter = InternalInterface.Utility.Converter
 local Release = LibScheduler.Release
 local TInsert = table.insert
 local ipairs = ipairs
+local next = next
 local pairs = pairs
-local tonumber = tonumber
 local type = type
 
-local VERSION = 2
+local VERSION = 3
 local ITEM, AUCTIONS = 1, 2
 local MAX_DATA_AGE = 30 * 24 * 60 * 60
 
+local ItemConverter = Converter({
+	{ field = "name",     length = 4, },
+	{ field = "icon",     length = 4, },
+	{ field = "category", length = 2, },
+	{ field = "level",    length = 1, },
+	{ field = "callings", length = 1, },
+	{ field = "rarity",   length = 1, },
+	{ field = "lastSeen", length = 4, },
+})
+
+local AuctionConverter = Converter({
+	{ field = "seller",    length = 3, },
+	{ field = "bid",       length = 5, },
+	{ field = "buy",       length = 5, },
+	{ field = "ownbid",    length = 5, },
+	{ field = "firstSeen", length = 4, },
+	{ field = "lastSeen",  length = 4, },
+	{ field = "minExpire", length = 4, },
+	{ field = "maxExpire", length = 4, },
+	{ field = "stacks",    length = 2, },
+	{ field = "flags",     length = 1, },
+})
+
 local function DataModelBuilder(rawData)
-	local I_NAME, I_ICON, I_CATEGORY, I_LEVEL, I_CALLINGS, I_RARITY, I_LASTSEEN = 1, 2, 3, 4, 5, 6, 7
-	local IC_WARRIOR, IC_CLERIC, IC_ROGUE, IC_MAGE = 1, 2, 3, 4
-	local A_SELLER, A_BID, A_BUY, A_OWNBID, A_FIRSTSEEN, A_LASTSEEN, A_MINEXPIRE, A_MAXEXPIRE, A_STACK, A_FLAGS = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
-	local AF_OWN, AF_BIDDED, AF_BEFOREEXPIRATION, AF_OWNBOUGHT, AF_CANCELLED = 1, 2, 3, 4, 5
+	local IC_WARRIOR, IC_CLERIC, IC_ROGUE, IC_MAGE = 8, 4, 2, 1
+	local AF_OWN, AF_BIDDED, AF_BEFOREEXPIRATION, AF_OWNBOUGHT, AF_CANCELLED = 128, 64, 32, 16, 8
 
 	-- If rawData is empty, create an empty model
 	if rawData == nil then
@@ -78,7 +100,7 @@ local function DataModelBuilder(rawData)
 	local purgeTime = Inspect.Time.Server() - MAX_DATA_AGE
 	
 	for auctionID, auctionData in pairs(rawData.auctions) do
-		if auctionData[A_LASTSEEN] < purgeTime then
+		if AuctionConverter(auctionData).lastSeen < purgeTime then
 			rawData.auctions[auctionID] = nil
 		end
 		Release()
@@ -122,73 +144,77 @@ local function DataModelBuilder(rawData)
 		local itemData = itemType and rawData.items[itemType] and rawData.items[itemType][ITEM] or nil
 		if not itemData then return end
 		
-		return 	rawData.itemNames[itemData[I_NAME]],
-				rawData.itemIcons[itemData[I_ICON]],
-				rawData.itemCategories[itemData[I_CATEGORY]],
-				itemData[I_LEVEL],
+		itemData = ItemConverter(itemData)
+		local callings = itemData.callings
+		
+		return 	rawData.itemNames[itemData.name],
+				rawData.itemIcons[itemData.icon],
+				rawData.itemCategories[itemData.category],
+				itemData.level,
 				{
-					warrior = itemData[I_CALLINGS][IC_WARRIOR] and true or false,
-					cleric = itemData[I_CALLINGS][IC_CLERIC] and true or false,
-					rogue = itemData[I_CALLINGS][IC_ROGUE] and true or false,
-					mage = itemData[I_CALLINGS][IC_MAGE] and true or false,
+					warrior = CheckFlag(callings, IC_WARRIOR),
+					cleric = CheckFlag(callings, IC_CLERIC),
+					rogue = CheckFlag(callings, IC_ROGUE),
+					mage = CheckFlag(callings, IC_MAGE),
 				},
-				itemData[I_RARITY],
-				itemData[I_LASTSEEN]
+				itemData.rarity,
+				itemData.lastSeen
 	end
 
 	function dataModel:RetrieveItemName(itemType)
 		local itemData = itemType and rawData.items[itemType] and rawData.items[itemType][ITEM] or nil
 		if not itemData then return end
-		return rawData.itemNames[itemData[I_NAME]]
+		return rawData.itemNames[ItemConverter(itemData).name]
 	end
 	
 	function dataModel:RetrieveItemIcon(itemType)
 		local itemData = itemType and rawData.items[itemType] and rawData.items[itemType][ITEM] or nil
 		if not itemData then return end
-		return rawData.itemIcons[itemData[I_ICON]]
+		return rawData.itemIcons[ItemConverter(itemData).icon]
 	end
 	
 	function dataModel:RetrieveItemCategory(itemType)
 		local itemData = itemType and rawData.items[itemType] and rawData.items[itemType][ITEM] or nil
 		if not itemData then return end
-		return rawData.itemCategories[itemData[I_CATEGORY]]
+		return rawData.itemCategories[ItemConverter(itemData).category]
 	end
 	
 	function dataModel:RetrieveItemRequiredLevel(itemType)
 		local itemData = itemType and rawData.items[itemType] and rawData.items[itemType][ITEM] or nil
 		if not itemData then return end
-		return itemData[I_LEVEL]
+		return ItemConverter(itemData).level
 	end
 	
 	function dataModel:RetrieveItemRequiredCallings(itemType)
 		local itemData = itemType and rawData.items[itemType] and rawData.items[itemType][ITEM] or nil
 		if not itemData then return end
+		local callings = ItemConverter(itemData).callings
 		return
 		{
-			warrior = itemData[I_CALLINGS][IC_WARRIOR] and true or false,
-			cleric = itemData[I_CALLINGS][IC_CLERIC] and true or false,
-			rogue = itemData[I_CALLINGS][IC_ROGUE] and true or false,
-			mage = itemData[I_CALLINGS][IC_MAGE] and true or false,
+			warrior = CheckFlag(callings, IC_WARRIOR),
+			cleric = CheckFlag(callings, IC_CLERIC),
+			rogue = CheckFlag(callings, IC_ROGUE),
+			mage = CheckFlag(callings, IC_MAGE),
 		}
 	end
 	
 	function dataModel:RetrieveItemRarity(itemType)
 		local itemData = itemType and rawData.items[itemType] and rawData.items[itemType][ITEM] or nil
 		if not itemData then return end
-		return itemData[I_RARITY]
+		return ItemConverter(itemData).rarity
 	end
 	
 	function dataModel:RetrieveItemLastSeen(itemType)
 		local itemData = itemType and rawData.items[itemType] and rawData.items[itemType][ITEM] or nil
 		if not itemData then return end
-		return itemData[I_LASTSEEN]
+		return ItemConverter(itemData).lastSeen
 	end
 	
 	function dataModel:StoreItem(itemType, name, icon, category, requiredLevel, requiredCallings, rarity, lastSeen)
 		if not itemType then return false end
 		if not name or not icon or not category or not requiredLevel or type(requiredCallings) ~= "table" or not rarity or not lastSeen then return false end
 		
-		rawData.items[itemType] = rawData.items[itemType] or { {}, {}, }
+		rawData.items[itemType] = rawData.items[itemType] or { "", {}, }
 		
 		local nameID = reverseNames[name]
 		if not nameID then
@@ -211,22 +237,19 @@ local function DataModelBuilder(rawData)
 			reverseCategories[category] = categoryID
 		end
 		
-		rawData.items[itemType][ITEM] =
-		{
-			[I_NAME] = nameID,
-			[I_ICON] = iconID,
-			[I_CATEGORY] = categoryID,
-			[I_LEVEL] = requiredLevel,
-			[I_CALLINGS] =
-			{
-				[IC_WARRIOR] = requiredCallings.warrior and 1 or nil,
-				[IC_CLERIC] = requiredCallings.cleric and 1 or nil,
-				[IC_ROGUE] = requiredCallings.rogue and 1 or nil,
-				[IC_MAGE] = requiredCallings.mage and 1 or nil,
-			},
-			[I_RARITY] = rarity,
-			[I_LASTSEEN] = lastSeen,
-		}
+		local itemData = ItemConverter()
+		itemData.name = nameID
+		itemData.icon = iconID
+		itemData.category = categoryID
+		itemData.level = requiredLevel
+		itemData.callings = (requiredCallings.warrior and IC_WARRIOR or 0) +
+		                    (requiredCallings.cleric and IC_CLERIC or 0) +
+		                    (requiredCallings.rogue and IC_ROGUE or 0) +
+		                    (requiredCallings.mage and IC_MAGE or 0)
+		itemData.rarity = rarity
+		itemData.lastSeen = lastSeen
+		
+		rawData.items[itemType][ITEM] = tostring(itemData)
 		
 		return true
 	end
@@ -242,7 +265,9 @@ local function DataModelBuilder(rawData)
 			reverseNames[name] = nameID
 		end
 		
-		rawData.items[itemType][ITEM][I_NAME] = nameID
+		local itemData = ItemConverter(rawData.items[itemType][ITEM])
+		itemData.name = nameID
+		rawData.items[itemType][ITEM] = tostring(itemData)
 		
 		return true
 	end
@@ -258,7 +283,9 @@ local function DataModelBuilder(rawData)
 			reverseIcons[icon] = iconID
 		end
 		
-		rawData.items[itemType][ITEM][I_ICON] = iconID
+		local itemData = ItemConverter(rawData.items[itemType][ITEM])
+		itemData.icon = iconID
+		rawData.items[itemType][ITEM] = tostring(itemData)
 
 		return true
 	end
@@ -274,7 +301,9 @@ local function DataModelBuilder(rawData)
 			reverseCategories[category] = categoryID
 		end
 		
-		rawData.items[itemType][ITEM][I_CATEGORY] = categoryID
+		local itemData = ItemConverter(rawData.items[itemType][ITEM])
+		itemData.category = categoryID
+		rawData.items[itemType][ITEM] = tostring(itemData)
 
 		return true
 	end
@@ -283,7 +312,9 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] then return false end
 		if not requiredLevel then return false end
 		
-		rawData.items[itemType][ITEM][I_LEVEL] = requiredLevel
+		local itemData = ItemConverter(rawData.items[itemType][ITEM])
+		itemData.level = requiredLevel
+		rawData.items[itemType][ITEM] = tostring(itemData)
 
 		return true
 	end
@@ -292,13 +323,12 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] then return false end
 		if type(requiredCallings) ~= "table" then return false end
 
-		rawData.items[itemType][ITEM][I_CALLINGS] =
-		{
-			[IC_WARRIOR] = requiredCallings.warrior and 1 or nil,
-			[IC_CLERIC] = requiredCallings.cleric and 1 or nil,
-			[IC_ROGUE] = requiredCallings.rogue and 1 or nil,
-			[IC_MAGE] = requiredCallings.mage and 1 or nil,
-		}
+		local itemData = ItemConverter(rawData.items[itemType][ITEM])
+		itemData.callings = (requiredCallings.warrior and IC_WARRIOR or 0) +
+		                    (requiredCallings.cleric and IC_CLERIC or 0) +
+		                    (requiredCallings.rogue and IC_ROGUE or 0) +
+		                    (requiredCallings.mage and IC_MAGE or 0)
+		rawData.items[itemType][ITEM] = tostring(itemData)
 
 		return true
 	end
@@ -307,7 +337,9 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] then return false end
 		if not rarity then return false end
 		
-		rawData.items[itemType][ITEM][I_RARITY] = rarity
+		local itemData = ItemConverter(rawData.items[itemType][ITEM])
+		itemData.rarity = rarity
+		rawData.items[itemType][ITEM] = tostring(itemData)
 
 		return true
 	end
@@ -316,7 +348,9 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] then return false end
 		if not lastSeen then return false end
 		
-		rawData.items[itemType][ITEM][I_LASTSEEN] = lastSeen
+		local itemData = ItemConverter(rawData.items[itemType][ITEM])
+		itemData.lastSeen = lastSeen
+		rawData.items[itemType][ITEM] = tostring(itemData)
 
 		return true
 	end
@@ -375,86 +409,87 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] then return nil end
 		
 		local active = rawData.items[itemType][AUCTIONS][auctionID]
-		local auctionData = rawData.auctions[auctionID]
-
-		return rawData.auctionSellers[auctionData[A_SELLER]],
-				auctionData[A_BID], auctionData[A_BUY], auctionData[A_OWNBID],
-				auctionData[A_FIRSTSEEN], auctionData[A_LASTSEEN], auctionData[A_MINEXPIRE], auctionData[A_MAXEXPIRE],
-				auctionData[A_STACK],
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		local flags = auctionData.flags
+		
+		return rawData.auctionSellers[auctionData.seller],
+				auctionData.bid, auctionData.buy, auctionData.ownbid,
+				auctionData.firstSeen, auctionData.lastSeen, auctionData.minExpire, auctionData.maxExpire,
+				auctionData.stacks,
 				{
-					own = auctionData[A_FLAGS][AF_OWN] and true or false,
-					bidded = auctionData[A_FLAGS][AF_BIDDED] and true or false,
-					beforeExpiration = auctionData[A_FLAGS][AF_BEFOREEXPIRATION] and true or false,
-					ownBought = auctionData[A_FLAGS][AF_OWNBOUGHT] and true or false,
-					cancelled = auctionData[A_FLAGS][AF_CANCELLED] and true or false,
+					own = CheckFlag(flags, AF_OWN),
+					bidded = CheckFlag(flags, AF_BIDDED),
+					beforeExpiration = CheckFlag(flags, AF_BEFOREEXPIRATION),
+					ownBought = CheckFlag(flags, AF_OWNBOUGHT),
+					cancelled = CheckFlag(flags, AF_CANCELLED),
 				},
 			   active
 	end
 	
 	function dataModel:RetrieveAuctionSeller(itemType, auctionID)
 		if not itemType or not rawData.items[itemType] then return end
-		local auctionData = rawData.auctions[auctionID]
-		return rawData.auctionSellers[auctionData[A_SELLER]]
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		return rawData.auctionSellers[auctionData.seller]
 	end
 	
 	function dataModel:RetrieveAuctionBid(itemType, auctionID)
 		if not itemType or not rawData.items[itemType] then return end
-		local auctionData = rawData.auctions[auctionID]
-		return auctionData[A_BID]
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		return auctionData.bid
 	end
 	
 	function dataModel:RetrieveAuctionBuy(itemType, auctionID)
 		if not itemType or not rawData.items[itemType] then return end
-		local auctionData = rawData.auctions[auctionID]
-		return auctionData[A_BUY]
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		return auctionData.buy
 	end
 	
 	function dataModel:RetrieveAuctionOwnBid(itemType, auctionID)
 		if not itemType or not rawData.items[itemType] then return end
-		local auctionData = rawData.auctions[auctionID]
-		return auctionData[A_OWNBID]
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		return auctionData.ownbid
 	end
 	
 	function dataModel:RetrieveAuctionFirstSeen(itemType, auctionID)
 		if not itemType or not rawData.items[itemType] then return end
-		local auctionData = rawData.auctions[auctionID]
-		return auctionData[A_FIRSTSEEN]
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		return auctionData.firstSeen
 	end
 	
 	function dataModel:RetrieveAuctionLastSeen(itemType, auctionID)
 		if not itemType or not rawData.items[itemType] then return end
-		local auctionData = rawData.auctions[auctionID]
-		return auctionData[A_LASTSEEN]
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		return auctionData.lastSeen
 	end
 	
 	function dataModel:RetrieveAuctionMinExpire(itemType, auctionID)
 		if not itemType or not rawData.items[itemType] then return end
-		local auctionData = rawData.auctions[auctionID]
-		return auctionData[A_MINEXPIRE]
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		return auctionData.minExpire
 	end
 	
 	function dataModel:RetrieveAuctionMaxExpire(itemType, auctionID)
 		if not itemType or not rawData.items[itemType] then return end
-		local auctionData = rawData.auctions[auctionID]
-		return auctionData[A_MAXEXPIRE]
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		return auctionData.maxExpire
 	end
 	
 	function dataModel:RetrieveAuctionStack(itemType, auctionID)
 		if not itemType or not rawData.items[itemType] then return end
-		local auctionData = rawData.auctions[auctionID]
-		return auctionData[A_STACK]
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		return auctionData.stacks
 	end
 	
 	function dataModel:RetrieveAuctionFlags(itemType, auctionID)
 		if not itemType or not rawData.items[itemType] then return end
-		local auctionData = rawData.auctions[auctionID]
+		local flags = AuctionConverter(rawData.auctions[auctionID]).flags
 		return
 		{
-			own = auctionData[A_FLAGS][AF_OWN] and true or false,
-			bidded = auctionData[A_FLAGS][AF_BIDDED] and true or false,
-			beforeExpiration = auctionData[A_FLAGS][AF_BEFOREEXPIRATION] and true or false,
-			ownBought = auctionData[A_FLAGS][AF_OWNBOUGHT] and true or false,
-			cancelled = auctionData[A_FLAGS][AF_CANCELLED] and true or false,
+			own = CheckFlag(flags, AF_OWN),
+			bidded = CheckFlag(flags, AF_BIDDED),
+			beforeExpiration = CheckFlag(flags, AF_BEFOREEXPIRATION),
+			ownBought = CheckFlag(flags, AF_OWNBOUGHT),
+			cancelled = CheckFlag(flags, AF_CANCELLED),
 		}
 	end
 
@@ -469,26 +504,24 @@ local function DataModelBuilder(rawData)
 			reverseSellers[seller] = sellerID
 		end
 		
-		rawData.auctions[auctionID] =
-		{
-			[A_SELLER] = sellerID,
-			[A_BID] = bid,
-			[A_BUY] = buy,
-			[A_OWNBID] = ownBid,
-			[A_FIRSTSEEN] = firstSeen,
-			[A_LASTSEEN] = lastSeen,
-			[A_MINEXPIRE] = minExpire,
-			[A_MAXEXPIRE] = maxExpire,
-			[A_STACK] = stack,
-			[A_FLAGS] =
-			{
-				[AF_OWN] = flags.own and 1 or nil,
-				[AF_BIDDED] = flags.bidded and 1 or nil,
-				[AF_BEFOREEXPIRATION] = flags.beforeExpiration and 1 or nil,
-				[AF_OWNBOUGHT] = flags.ownBought and 1 or nil,
-				[AF_CANCELLED] = flags.cancelled and 1 or nil,
-			},
-		}
+		local auctionData = AuctionConverter()
+		
+		auctionData.seller = sellerID
+		auctionData.bid = bid
+		auctionData.buy = buy
+		auctionData.ownbid = ownBid
+		auctionData.firstSeen = firstSeen
+		auctionData.lastSeen = lastSeen
+		auctionData.minExpire = minExpire
+		auctionData.maxExpire = maxExpire
+		auctionData.stacks = stack
+		auctionData.flags = (flags.own and AF_OWN or 0) +
+		                    (flags.bidded and AF_BIDDED or 0) +
+		                    (flags.beforeExpiration and AF_BEFOREEXPIRATION or 0) +
+		                    (flags.ownBought and AF_OWNBOUGHT or 0) +
+		                    (flags.cancelled and AF_CANCELLED or 0)
+		
+		rawData.auctions[auctionID] = tostring(auctionData)
 		
 		rawData.items[itemType][AUCTIONS][auctionID] = active and true or false
 
@@ -506,7 +539,9 @@ local function DataModelBuilder(rawData)
 			reverseSellers[seller] = sellerID
 		end
 		
-		rawData.auctions[auctionID][A_SELLER] = sellerID
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		auctionData.seller = sellerID
+		rawData.auctions[auctionID] = tostring(auctionData)
 
 		return true
 	end
@@ -515,7 +550,9 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] or not auctionID then return false end
 		if not bid then return false end
 
-		rawData.auctions[auctionID][A_BID] = bid
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		auctionData.bid = bid
+		rawData.auctions[auctionID] = tostring(auctionData)
 
 		return true
 	end
@@ -524,7 +561,9 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] or not auctionID then return false end
 		if not buy then return false end
 
-		rawData.auctions[auctionID][A_BUY] = buy
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		auctionData.buy = buy
+		rawData.auctions[auctionID] = tostring(auctionData)
 
 		return true
 	end
@@ -533,7 +572,9 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] or not auctionID then return false end
 		if not ownBid then return false end
 
-		rawData.auctions[auctionID][A_OWNBID] = ownBid
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		auctionData.ownbid = ownBid
+		rawData.auctions[auctionID] = tostring(auctionData)
 
 		return true
 	end
@@ -542,7 +583,9 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] or not auctionID then return false end
 		if not firstSeen then return false end
 
-		rawData.auctions[auctionID][A_FIRSTSEEN] = firstSeen
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		auctionData.firstSeen = firstSeen
+		rawData.auctions[auctionID] = tostring(auctionData)
 
 		return true
 	end
@@ -551,7 +594,9 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] or not auctionID then return false end
 		if not lastSeen then return false end
 
-		rawData.auctions[auctionID][A_LASTSEEN] = lastSeen
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		auctionData.lastSeen = lastSeen
+		rawData.auctions[auctionID] = tostring(auctionData)
 
 		return true
 	end
@@ -560,7 +605,9 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] or not auctionID then return false end
 		if not minExpire then return false end
 
-		rawData.auctions[auctionID][A_MINEXPIRE] = minExpire
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		auctionData.minExpire = minExpire
+		rawData.auctions[auctionID] = tostring(auctionData)
 
 		return true
 	end
@@ -569,7 +616,9 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] or not auctionID then return false end
 		if not maxExpire then return false end
 
-		rawData.auctions[auctionID][A_MAXEXPIRE] = maxExpire
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		auctionData.maxExpire = maxExpire
+		rawData.auctions[auctionID] = tostring(auctionData)
 
 		return true
 	end
@@ -578,7 +627,9 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] or not auctionID then return false end
 		if not stack then return false end
 
-		rawData.auctions[auctionID][A_STACK] = stack
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		auctionData.stacks = stack
+		rawData.auctions[auctionID] = tostring(auctionData)
 
 		return true
 	end
@@ -587,14 +638,13 @@ local function DataModelBuilder(rawData)
 		if not itemType or not rawData.items[itemType] or not auctionID then return false end
 		if type(flags) ~= "table" then return false end
 
-		rawData.auctions[auctionID][A_FLAGS] =
-		{
-			[AF_OWN] = flags.own and 1 or nil,
-			[AF_BIDDED] = flags.bidded and 1 or nil,
-			[AF_BEFOREEXPIRATION] = flags.beforeExpiration and 1 or nil,
-			[AF_OWNBOUGHT] = flags.ownBought and 1 or nil,
-			[AF_CANCELLED] = flags.cancelled and 1 or nil,
-		}
+		local auctionData = AuctionConverter(rawData.auctions[auctionID])
+		auctionData.flags = (flags.own and AF_OWN or 0) +
+		                    (flags.bidded and AF_BIDDED or 0) +
+		                    (flags.beforeExpiration and AF_BEFOREEXPIRATION or 0) +
+		                    (flags.ownBought and AF_OWNBOUGHT or 0) +
+		                    (flags.cancelled and AF_CANCELLED or 0)
+		rawData.auctions[auctionID] = tostring(auctionData)		
 
 		return true
 	end

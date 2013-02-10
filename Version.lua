@@ -13,7 +13,7 @@ local type = type
 local pairs = pairs
 local print = print
 
-local CURRENT_VERSION = 2
+local CURRENT_VERSION = 3
 
 local dataModels = {}
 local migrationProcedures = {}

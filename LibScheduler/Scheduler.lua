@@ -3,7 +3,7 @@
 -- ***************************************************************************************************************************************************
 -- * Coordinates execution of long tasks, so they don't trigger the Evil Watchdog                                                                    *
 -- ***************************************************************************************************************************************************
--- * 0.9.0 / 2012.09.26 / Baanano: Externalized to LibScheduler and added new features                                                               *
+-- * 0.4.4 / 2012.09.26 / Baanano: Externalized to LibScheduler and added new features                                                               *
 -- * 0.4.1 / 2012.08.12 / Baanano: Copied to LibPGCEx                                                                                                *
 -- * 0.4.1 / 2012.07.10 / Baanano: Adapted to the new incarnation of the Watchdog                                                                    *
 -- * 0.4.0 / 2012.05.30 / Baanano: First version                                                                                                     *
@@ -123,6 +123,7 @@ local function RunScheduler()
 		local nextTask = activeQueue[1]
 		
 		local success, result = CResume(nextTask.taskCoroutine)
+		--if not success then print(result) end
 		
 		if CStatus(nextTask.taskCoroutine) == "dead" then
 			TaskFinished(nextTask.taskID, success, result)

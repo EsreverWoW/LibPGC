@@ -397,12 +397,12 @@ local function LoadAuctionTable(addonId)
 
 		lastTask = CreateTask(
 		function()
-			print("LibPGC: Loading auction database...")
+			--print("LibPGC: Loading auction database...")
 		
 			dataModel = InternalInterface.Version.LoadDataModel(rawData)
 			Release()
 			
-			print("LibPGC: Indexing active auctions...")
+			--print("LibPGC: Indexing active auctions...")
 			
 			for itemType in pairs(dataModel:RetrieveAllItems()) do
 				local activeAuctions = dataModel:RetrieveActiveAuctions(itemType)
@@ -422,7 +422,7 @@ local function LoadAuctionTable(addonId)
 			
 			loadComplete = dataModel and true
 			
-			print("LibPGC: Ready!")
+			--print("LibPGC: Ready!")
 		end, nil, nil, lastTask) or lastTask
 	end
 end
