@@ -14,9 +14,8 @@ local error = error
 local pairs = pairs
 local print = print
 
-local ORIGINAL_VERSION = 1
-local TARGET_VERSION = 2
-local RARITIES = { sellable = 1, [""] = 2, common = 2, uncommon = 3, rare = 4, epic = 5, relic = 6, transcendant = 7, quest = 8, }
+local ORIGINAL_VERSION = 2
+local TARGET_VERSION = 3
 
 local function Migration(oldModel)
 	print("Migrating " .. addonID .. " saved data from v" .. ORIGINAL_VERSION .. " to v" .. TARGET_VERSION .. "...")

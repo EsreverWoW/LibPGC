@@ -1,3 +1,7 @@
+	Beta 0.4.4 RC5
+- New data format (v3): Improved saving / loading times & reduced auction DB size
+- Now stores 30 days of data again
+
 	Beta 0.4.4 RC4
 - Added version and migration procedures to convert data from older versions to the latest format.
 - Reworked the data format to reduce the time it takes to save & load the auction DB.

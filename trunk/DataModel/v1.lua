@@ -17,7 +17,7 @@ local DEFAULT_RARITY = 2
 local DEFAULT_LASTSEEN = 0
 local RARITIES_C2N = { "sellable", "common", "uncommon", "rare", "epic", "relic", "transcendant", "quest", }
 local RARITIES_N2C = { sellable = 1, [""] = 2, common = 2, uncommon = 3, rare = 4, epic = 5, relic = 6, transcendant = 7, quest = 8, }
-local MAX_DATA_AGE = 5 * 24 * 60 * 60
+local MAX_DATA_AGE = 30 * 24 * 60 * 60
 
 local function DataModelBuilder(rawData)
 	-- If rawData is empty, create an empty model
