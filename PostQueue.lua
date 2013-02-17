@@ -42,6 +42,7 @@ local CopyTableRecursive = InternalInterface.Utility.CopyTableRecursive
 local postingQueue = {}
 local paused = false
 local waitingUpdate = false
+local waitingPost = false
 local waitFrames = 5
 local postingCoroutine = nil
 local QueueChangedEvent = UECreate(addonID, "PostingQueueChanged")
@@ -50,7 +51,7 @@ local QueueStatusChangedEvent = UECreate(addonID, "PostingQueueStatusChanged")
 local function PostingQueueCoroutine()
 	repeat
 		repeat
-			if paused or waitingUpdate or #postingQueue <= 0 or not IInteraction("auction") or not IQStatus("global") then break end
+			if paused or waitingUpdate or waitingPost or #postingQueue <= 0 or not IInteraction("auction") or not IQStatus("global") then break end
 
 			local postTable = postingQueue[1]
 			local itemType = postTable.itemType
@@ -90,7 +91,7 @@ local function PostingQueueCoroutine()
 					TInsert(higherItems, itemInfo)
 				end
 			until true end
-
+			
 			if #exactItems > 0 then -- Found an exact match!
 				local item = exactItems[1].itemID
 				local tim = postTable.duration
@@ -110,9 +111,11 @@ local function PostingQueueCoroutine()
 					break
 				end
 				
-				CAPost(item, tim, bid, buyout, GetAuctionPostCallback(itemType, tim, bid, buyout))
-				postingQueue[1].amount = postingQueue[1].amount - searchStackSize
 				waitingUpdate = true
+				waitingPost = true
+				local postCallback = GetAuctionPostCallback(itemType, tim, bid, buyout)
+				CAPost(item, tim, bid, buyout, function(...) postCallback(...); waitingPost = false; QueueStatusChangedEvent(); end)
+				postingQueue[1].amount = postingQueue[1].amount - searchStackSize
 				QueueChangedEvent()
 				QueueStatusChangedEvent()
 				break
@@ -243,7 +246,7 @@ function PublicInterface.GetPostingQueueStatus()
 	if paused then status = 1 -- Paused
 	elseif #postingQueue <= 0 then status = 2 -- Empty
 	elseif not IInteraction("auction") then status = 3 -- Not at the AH
-	elseif waitingUpdate or not IQStatus("global") then status = 4 -- Waiting
+	elseif waitingUpdate or waitingPost or not IQStatus("global") then status = 4 -- Waiting
 	elseif waitFrames > 0 then status = 5 -- Jammed
 	end
 	
