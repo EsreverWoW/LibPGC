@@ -1,3 +1,6 @@
+	Release 0.4.9
+- Updated to RIFT 2.3	
+
 	Release 0.4.5
 - Added version and migration procedures to convert data from older versions to the latest format.
 - Reworked the data format to reduce the time it takes to save & load the auction DB.
