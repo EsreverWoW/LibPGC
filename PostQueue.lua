@@ -3,6 +3,7 @@
 -- ***************************************************************************************************************************************************
 -- * Posts auctions, splitting stacks if needed                                                                                                      *
 -- ***************************************************************************************************************************************************
+-- * 0.4.12/ 2013.09.17 / Baanano: Updated events to the new model                                                                                   *
 -- * 0.4.4 / 2012.11.01 / Baanano: Added auto unjam (best effort)                                                                                    *
 -- * 0.4.1 / 2012.07.14 / Baanano: Updated for LibPGC                                                                                                *
 -- * 0.4.0 / 2012.06.17 / Baanano: Rewritten AHPostingService.lua                                                                                    *
@@ -20,6 +21,7 @@ local CCreate = coroutine.create
 local CResume = coroutine.resume
 local CYield = coroutine.yield
 local CAPost = Command.Auction.Post
+local CEAttach = Command.Event.Attach
 local CIMove = Command.Item.Move
 local CISplit = Command.Item.Split
 local IInteraction = Inspect.Interaction
@@ -166,7 +168,7 @@ local function OnSystemUpdate()
 		CResume(postingCoroutine)
 	end
 end
-TInsert(Event.System.Update.Begin, { OnSystemUpdate, addonID, addonID .. ".PostQueue.OnSystemUpdate" })
+CEAttach(Event.System.Update.Begin, OnSystemUpdate, addonID .. ".PostQueue.OnSystemUpdate")
 
 local function OnWaitingUnlock()
 	if waitingUpdate then
@@ -174,23 +176,22 @@ local function OnWaitingUnlock()
 		QueueStatusChangedEvent()
 	end
 end
-TInsert(Event.Item.Slot, { OnWaitingUnlock, addonID, addonID .. ".PostQueue.OnWaitingUnlockSlot" })
-TInsert(Event.Item.Update, { OnWaitingUnlock, addonID, addonID .. ".PostQueue.OnWaitingUnlockUpdate" })
+CEAttach(Event.Item.Slot, OnWaitingUnlock, addonID .. ".PostQueue.OnWaitingUnlockSlot")
+CEAttach(Event.Item.Update, OnWaitingUnlock, addonID .. ".PostQueue.OnWaitingUnlockUpdate")
 
-local function OnInteractionChanged(interaction, state)
+local function OnInteractionChanged(h, interaction, state)
 	if interaction == "auction" then
 		QueueStatusChangedEvent()
 	end
 end
-TInsert(Event.Interaction, { OnInteractionChanged, addonID, addonID .. ".PostQueue.OnInteractionChanged" })
+CEAttach(Event.Interaction, OnInteractionChanged, addonID .. ".PostQueue.OnInteractionChanged")
 
-local function OnGlobalQueueChanged(queue)
+local function OnGlobalQueueChanged(h, queue)
 	if queue == "global" then
 		QueueStatusChangedEvent()
 	end
 end
-TInsert(Event.Queue.Status, { OnGlobalQueueChanged, addonID, addonID .. ".PostQueue.OnGlobalQueueChanged" })
-
+CEAttach(Event.Queue.Status, OnGlobalQueueChanged, addonID .. ".PostQueue.OnGlobalQueueChanged")
 
 function PublicInterface.PostItem(item, stackSize, amount, unitBidPrice, unitBuyoutPrice, duration)
 	if not item or not amount or not stackSize or not unitBidPrice or not duration then return false end

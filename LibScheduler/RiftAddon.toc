@@ -11,7 +11,7 @@ Description =
 	English = "A scheduler library for async execution.",
 }
 Author = "Baanano"
-Version = "0.4.9"
+Version = "0.4.12"
 Email = "baanano.rift@gmail.com"
 Environment = "2.3"
 RunOnStartup =
