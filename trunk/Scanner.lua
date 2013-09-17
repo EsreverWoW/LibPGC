@@ -3,6 +3,7 @@
 -- ***************************************************************************************************************************************************
 -- * Processes auction scans and stores them in the auction DB                                                                                       *
 -- ***************************************************************************************************************************************************
+-- * 0.4.12/ 2013.09.17 / Baanano: Updated events to the new model                                                                                   *
 -- * 0.4.4 / 2012.08.12 / Baanano: Fixed minor bug in Event.LibPGC.AuctionData                                                                       *
 -- * 0.4.1 / 2012.07.10 / Baanano: Updated for LibPGC                                                                                                *
 -- * 0.4.0 / 2012.05.31 / Baanano: Rewritten AHMonitoringService.lua                                                                                 *
@@ -17,6 +18,7 @@ local PublicInterface = _G[addonID]
 local PAGESIZE = 1000
 local ITEM, ACTIVE, EXPIRED = 1, 2, 3
 
+local CEAttach = Command.Event.Attach
 local CreateTask = LibScheduler.CreateTask
 local GetPlayerName = InternalInterface.Utility.GetPlayerName
 local IInteraction = Inspect.Interaction
@@ -108,7 +110,7 @@ local function TryMatchPost(itemType, tim, timestamp, bid, buyout)
 	TInsert(pendingPosts[itemType], { tim = tim, timestamp = timestamp, bid = bid, buy = buyout or 0 })
 end
 
-local function OnAuctionData(criteria, auctions)
+local function OnAuctionData(h, criteria, auctions)
 	local auctionScanTime = Time()
 	local expireTimes = 
 	{ 
@@ -389,9 +391,9 @@ local function OnAuctionData(criteria, auctions)
 	
 	lastTask = CreateTask(ProcessAuctions, ProcessCompleted, nil, lastTask) or lastTask
 end
-TInsert(Event.Auction.Scan, { OnAuctionData, addonID, addonID .. ".Scanner.OnAuctionData" })
+CEAttach(Event.Auction.Scan, OnAuctionData, addonID .. ".Scanner.OnAuctionData")
 
-local function LoadAuctionTable(addonId)
+local function LoadAuctionTable(h, addonId)
 	if addonId == addonID then
 		local rawData = _G[addonID .. "AuctionTable"]
 
@@ -426,15 +428,15 @@ local function LoadAuctionTable(addonId)
 		end, nil, nil, lastTask) or lastTask
 	end
 end
-TInsert(Event.Addon.SavedVariables.Load.End, {LoadAuctionTable, addonID, addonID .. ".Scanner.LoadAuctionData"})
+CEAttach(Event.Addon.SavedVariables.Load.End, LoadAuctionTable, addonID .. ".Scanner.LoadAuctionData")
 
-local function SaveAuctionTable(addonId)
+local function SaveAuctionTable(h, addonId)
 	if addonId == addonID and loadComplete then
 		local rawData = dataModel:GetRawData()
 		_G[addonID .. "AuctionTable"] = rawData
 	end
 end
-TInsert(Event.Addon.SavedVariables.Save.Begin, {SaveAuctionTable, addonID, addonID .. ".Scanner.SaveAuctionData"})
+CEAttach(Event.Addon.SavedVariables.Save.Begin, SaveAuctionTable, addonID .. ".Scanner.SaveAuctionData")
 
 local function ProcessAuctionBuy(auctionID)
 	local itemType = cachedAuctions[auctionID]

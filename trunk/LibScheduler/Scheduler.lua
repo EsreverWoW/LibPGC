@@ -3,6 +3,7 @@
 -- ***************************************************************************************************************************************************
 -- * Coordinates execution of long tasks, so they don't trigger the Evil Watchdog                                                                    *
 -- ***************************************************************************************************************************************************
+-- * 0.4.12/ 2013.09.17 / Baanano: Updated events to the new model                                                                                   *
 -- * 0.4.4 / 2012.09.26 / Baanano: Externalized to LibScheduler and added new features                                                               *
 -- * 0.4.1 / 2012.08.12 / Baanano: Copied to LibPGCEx                                                                                                *
 -- * 0.4.1 / 2012.07.10 / Baanano: Adapted to the new incarnation of the Watchdog                                                                    *
@@ -18,6 +19,7 @@ local WATCHDOG_LIMIT = 0.05
 local NUM_INSTANCES = 1
 
 local CCreate = coroutine.create
+local CEAttach = Command.Event.Attach
 local CResume = coroutine.resume
 local CStatus = coroutine.status
 local CYield = coroutine.yield
@@ -131,7 +133,7 @@ local function RunScheduler()
 	end
 end
 for instance = 1, NUM_INSTANCES do
-	TInsert(Event.System.Update.Begin, { RunScheduler, addonID, addonID .. ".Scheduler." .. instance })
+	CEAttach(Event.System.Update.Begin, RunScheduler, addonID .. ".Scheduler." .. instance)
 end
 
 function PublicInterface.CreateTask(task, onComplete, onError, waitOn)
