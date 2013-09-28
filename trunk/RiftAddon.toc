@@ -11,10 +11,10 @@ Description =
 	English = "LibPGC is a Rift Addon Library that extends AH functionality.",
 }
 Author = "Baanano"
-Version = "0.4.12"
+Version = "0.4.13"
 Email = "baanano.rift@gmail.com"
 Website = "http://www.bananah.net/"
-Environment = "2.3"
+Environment = "2.4"
 SavedVariables =
 {
 	LibPGCAuctionTable = "shard",
