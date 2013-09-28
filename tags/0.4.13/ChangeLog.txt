@@ -1,0 +1,23 @@
+	Release 0.4.13
+- Updated to RIFT 2.4
+- Auction data now includes item category
+
+	Release 0.4.12
+- Updated to the new event model
+
+	Release 0.4.9
+- Updated to RIFT 2.3	
+
+	Release 0.4.5
+- Added version and migration procedures to convert data from older versions to the latest format.
+- Reworked the data format to reduce the time it takes to save & load the auction DB.
+- Added auto unjam feature (best effort behavior)
+- Fixed a bug that emptied saved variables when the auction DB had over 65k auctions stored
+- Fixed a bug that crashed the addon when scanning more than 50k auctions in a full scan
+- Fixed bug in GetLastTimeSeen	
+
+	Release 0.4.4
+- Fixed minor bug in Event.LibPGC.AuctionData
+
+	Release 0.4.1
+- First version independent from BananAH
