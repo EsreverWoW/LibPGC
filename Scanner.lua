@@ -507,6 +507,7 @@ local function GetAuctionData(itemType, auctionID)
 	local itemName = dataModel:RetrieveItemName(itemType)
 	local itemIcon = dataModel:RetrieveItemIcon(itemType)
 	local rarity = dataModel:RetrieveItemRarity(itemType)
+	local category = dataModel:RetrieveItemCategory(itemType)
 
 	local seller, bid, buy, ownBidded, firstSeen, lastSeen, minExpire, maxExpire, stacks, flags, active = dataModel:RetrieveAuctionData(itemType, auctionID)
 	if not seller then return nil end
@@ -518,6 +519,7 @@ local function GetAuctionData(itemType, auctionID)
 		itemName = itemName,
 		itemIcon = itemIcon,
 		itemRarity = RARITIES_C2N[rarity],
+		itemCategory = category,
 		stack = stacks,
 		bidPrice = bid,
 		buyoutPrice = buy ~= 0 and buy or nil,
