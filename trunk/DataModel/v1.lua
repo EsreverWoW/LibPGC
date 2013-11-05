@@ -1,16 +1,12 @@
 -- ***************************************************************************************************************************************************
 -- * v1.lua                                                                                                                                          *
 -- ***************************************************************************************************************************************************
--- * LibPGC DataModel v1                                                                                                                             *
--- ***************************************************************************************************************************************************
 -- * 0.4.4 / 2013.01.01 / Baanano: First version                                                                                                     *
 -- ***************************************************************************************************************************************************
 
-local addonInfo, InternalInterface = ...
-local addonID = addonInfo.identifier
-
-local pairs = pairs
-local type = type
+local addonDetail, addonData = ...
+local addonID = addonDetail.identifier
+local Internal, Public = addonData.Internal, addonData.Public
 
 local VERSION = 1
 local DEFAULT_RARITY = 2
@@ -487,4 +483,4 @@ local function DataModelBuilder(rawData)
 	return dataModel
 end
 
-InternalInterface.Version.RegisterDataModel(VERSION, DataModelBuilder)
+Internal.Version.RegisterDataModel(VERSION, DataModelBuilder)

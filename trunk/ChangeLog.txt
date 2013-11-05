@@ -1,3 +1,9 @@
+	Alpha 0.5.0 r18
+- Added repost and false expiration detection (data model updated accordingly)
+- Improved posting queue unjam routine
+- Modified public interface: this version isn't backwards compatible
+- Switched scheduler library to blTasks, auction queries now return abortable tasks.
+
 	Release 0.4.13
 - Updated to RIFT 2.4
 - Auction data now includes item category
@@ -6,7 +12,7 @@
 - Updated to the new event model
 
 	Release 0.4.9
-- Updated to RIFT 2.3	
+- Updated to RIFT 2.3
 
 	Release 0.4.5
 - Added version and migration procedures to convert data from older versions to the latest format.
