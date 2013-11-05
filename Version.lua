@@ -1,44 +1,37 @@
 -- ***************************************************************************************************************************************************
 -- * Version.lua                                                                                                                                     *
 -- ***************************************************************************************************************************************************
--- * Handles datamodel versions and migration procedures                                                                                             *
--- ***************************************************************************************************************************************************
+-- * 0.5.0 / 2013.09.29 / Baanano: Refactored                                                                                                        *
 -- * 0.4.4 / 2012.12.19 / Baanano: First version                                                                                                     *
 -- ***************************************************************************************************************************************************
 
-local addonInfo, InternalInterface = ...
-local addonID = addonInfo.identifier
+local addonDetail, addonData = ...
+local addonID = addonDetail.identifier
+local Internal, Public = addonData.Internal, addonData.Public
 
-local type = type
-local pairs = pairs
-local print = print
-
-local CURRENT_VERSION = 3
-
+local CURRENT_VERSION = Internal.Constants.DATAMODEL_VERSION
 local dataModels = {}
 local migrationProcedures = {}
 
-InternalInterface.Version = InternalInterface.Version or {}
-
-function InternalInterface.Version.GetCurrentVersion()
+function Internal.Version.GetCurrentVersion()
 	return CURRENT_VERSION
 end
 
-function InternalInterface.Version.RegisterDataModel(version, model)
+function Internal.Version.RegisterDataModel(version, model)
 	if type(version) ~= "number" or type(model) ~= "function" then return end
 	dataModels[version] = model
 end
 
-function InternalInterface.Version.GetDataModelBuilder(version)
+function Internal.Version.GetDataModelBuilder(version)
 	return version and dataModels[version]
 end
 
-function InternalInterface.Version.RegisterMigrationProcedure(version, procedure)
+function Internal.Version.RegisterMigrationProcedure(version, procedure)
 	if type(version) ~= "number" or type(procedure) ~= "function" then return end
 	migrationProcedures[version] = procedure
 end
 
-function InternalInterface.Version.LoadDataModel(data)
+function Internal.Version.LoadDataModel(data)
 	local dataModel = nil
 	local dataModelVersion = nil
 	
@@ -63,7 +56,7 @@ function InternalInterface.Version.LoadDataModel(data)
 		local migrationProcedure = migrationProcedures[dataModelVersion]
 		
 		if not migrationProcedure then -- If no migration procedure is available, warn the user and exit
-			print("Couldn't find a migration procedure for v" .. dataModelVersion .. ". Your data is unusable and will be wiped the next time you log out. If you want to backup it, save your " .. addonID .. ".lua SavedVariables file now!")
+			print("Couldn't find a migration procedure for v" .. dataModelVersion .. ". Your data is unusable and will be wiped the next time you log out. If you want to backup it, save your " .. addonID .. ".lua SavedVariables file immediately!")
 			dataModel = nil
 			break
 		end
@@ -71,7 +64,7 @@ function InternalInterface.Version.LoadDataModel(data)
 		local success		
 		success, dataModel, dataModelVersion = pcall(migrationProcedure, dataModel)
 		if not success then -- If the migration procedure failed, warn the user and exit
-			print("Migration procedure failed. Your data is unusable and will be wiped the next time you log out. If you want to backup it, save your " .. addonID .. ".lua SavedVariables file now!")
+			print("Migration procedure failed. Your data is unusable and will be wiped the next time you log out. If you want to backup it, save your " .. addonID .. ".lua SavedVariables file immediately!")
 			dataModel = nil
 			break
 		end

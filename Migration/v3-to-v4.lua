@@ -1,28 +1,21 @@
 -- ***************************************************************************************************************************************************
--- * v1-to-v3.lua                                                                                                                                    *
+-- * v3-to-v4.lua                                                                                                                                    *
 -- ***************************************************************************************************************************************************
--- * 0.4.4 / 2012.12.19 / Baanano: First version                                                                                                     *
+-- * 0.5.0 / 2013.09.29 / Baanano: First version                                                                                                     *
 -- ***************************************************************************************************************************************************
 
 local addonDetail, addonData = ...
 local addonID = addonDetail.identifier
 local Internal, Public = addonData.Internal, addonData.Public
 
-local Release =
-	function()
-		if blTasks then
-			local contextHandle = blTasks.Task.Current()
-			if contextHandle then
-				contextHandle:Breath()
-			end
-		end
-	end
-
-local ORIGINAL_VERSION = 1
-local TARGET_VERSION = 3
+local ORIGINAL_VERSION = 3
+local TARGET_VERSION = 4
+local FAKE_ITEM = "i0000000000000000"
 
 local function Migration(oldModel)
 	print("Migrating " .. addonID .. " saved data from v" .. ORIGINAL_VERSION .. " to v" .. TARGET_VERSION .. "...")
+	
+	local contextHandle = blTasks.Task.Current()
 	
 	local itemCount = 0
 	local auctionCount = 0
@@ -39,15 +32,26 @@ local function Migration(oldModel)
 			error("Couldn't migrate item")
 		end
 		
-		Release()
-		
 		for auctionID in pairs(oldModel:RetrieveAllAuctions(itemType)) do
+			contextHandle:BreathShort()
+			
 			local seller, bid, buy, ownBid, firstSeen, lastSeen, minExpire, maxExpire, stack, flags, active = oldModel:RetrieveAuctionData(itemType, auctionID)
-			if not newModel:StoreAuction(itemType, auctionID, active, seller, bid, buy, ownBid, firstSeen, lastSeen, minExpire, maxExpire, stack, flags) then
+			
+			local firstUnseen = 0
+			if not active then
+				if flags.beforeExpiration then
+					firstUnseen = minExpire
+				else
+					firstUnseen = maxExpire
+				end
+			end
+
+			if not newModel:StoreAuction(itemType, auctionID, active, seller, FAKE_ITEM, bid, buy, ownBid, firstSeen, firstUnseen, minExpire, maxExpire, stack, flags) then
 				error("Couldn't migrate auction")
 			end
 			auctionCount = auctionCount + 1
-			Release()
+			
+			contextHandle:BreathShort()
 		end
 		
 		itemCount = itemCount + 1
