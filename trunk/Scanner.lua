@@ -29,7 +29,6 @@ local pendingAuctions = {}
 local pendingPosts = {}
 local nativeIndexer = Internal.Indexer.Native()
 local ownIndex = {}
-local itemIndex = {}
 local lock = {}
 
 local ReadyEvent = Utility.Event.Create(addonID, "Ready")
@@ -330,7 +329,7 @@ local function OnAuctionData(eventHandle, criteria, auctions)
 						-- 3.2.5. Check if this is a new auction
 						if not dataModel:CheckAuctionExists(itemType, auctionID) then
 							-- 3.2.5.1. Check if this is a repost
-							local reposted = itemIndex[auctionDetail.item] and true or false
+							local reposted = dataModel:CheckItemKnown(auctionDetail.item)
 							
 							-- 3.2.5.2. Store it in the DB
 							dataModel:StoreAuction(itemType, auctionID, true,
@@ -362,8 +361,6 @@ local function OnAuctionData(eventHandle, criteria, auctions)
 								ownIndex[auctionID] = itemType
 								TryMatchAuction(auctionID)
 							end
-							
-							itemIndex[auctionDetail.item] = true
 						
 						-- 3.2.6. Update the auction
 						else
@@ -594,7 +591,8 @@ local function LoadAuctionTable(h, addon)
 					if activeAuctions and next(activeAuctions) then
 						local name, _, category, level, callings, rarity = dataModel:RetrieveItemData(itemType)
 						for auctionID in pairs(activeAuctions) do
-							local _, item, _, buy, _, _, _, _, _, _, flags = dataModel:RetrieveAuctionData(itemType, auctionID)
+							local buy = dataModel:RetrieveAuctionBuy(itemType, auctionID)
+							local flags = dataModel:RetrieveAuctionFlags(itemType, auctionID)
 							
 							-- Native index
 							nativeIndexer.AddAuction(itemType, auctionID, callings, rarity, level, category, name, buy)
@@ -604,25 +602,11 @@ local function LoadAuctionTable(h, addon)
 								ownIndex[auctionID] = itemType
 							end
 							
-							-- Item index
-							itemIndex[item] = true
-							
 							taskHandle:BreathShort()
 						end
 					end
-					
-					local expiredAuctions = dataModel:RetrieveExpiredAuctions(itemType)
-					
-					for auctionID in pairs(expiredAuctions) do
-						local item = dataModel:RetrieveAuctionItem(itemType, auctionID)
-						
-						-- Item index
-						itemIndex[item] = true
-						
-						taskHandle:BreathShort()
-					end
 				end
-				
+
 				-- Deactivate the loading flag
 				if dataModel then
 					loading = nil
@@ -994,6 +978,10 @@ function Public.Item.LastTimeSeen(item)
 	return dataModel:RetrieveItemLastSeen(itemType)
 end
 
+function Public.Auction.Cached(auctionID)
+	return auctionID and cachedAuctions[auctionID] and true or false
+end
+
 function Public.Ready()
 	return not loading
 end
@@ -1010,6 +998,7 @@ end
 	.Search.Own
 	.Ready
 	
+	.Auction.Cached
 	.Item.LastTimeSeen
 	
 	Event..Scan.Begin

@@ -26,4 +26,5 @@ local Public = addonData.Public
 Public.Callback = {}
 Public.Search = {}
 Public.Item = {}
+Public.Auction = {}
 Public.Queue = {}
