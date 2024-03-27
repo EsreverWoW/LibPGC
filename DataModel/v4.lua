@@ -104,13 +104,8 @@ local function DataModelBuilder(rawData)
 	
 	for auctionID, auctionData in pairs(rawData.auctions) do
 		local auctionInfo = AuctionConverter(auctionData)
-		local firstUnseen = auctionInfo.firstUnseen
-		
-		if firstUnseen > 0 and firstUnseen < purgeTime then
-			local flags = auctionInfo.flags
-			if not CheckFlag(flags, AF_OWN) and not CheckFlag(flags, AF_OWNBOUGHT) then
-				rawData.auctions[auctionID] = nil
-			end
+		if auctionInfo.firstUnseen > 0 and auctionInfo.firstUnseen < purgeTime and not CheckFlag(auctionInfo.flags, AF_OWN) and not CheckFlag(auctionInfo.flags, AF_OWNBOUGHT) then
+			rawData.auctions[auctionID] = nil
 		end
 		
 		contextHandle:BreathShort()
@@ -129,7 +124,7 @@ local function DataModelBuilder(rawData)
 		
 		contextHandle:BreathShort()
 	end
-
+	
 	
 	-- Model	
 	function dataModel:GetRawData()
@@ -712,10 +707,6 @@ local function DataModelBuilder(rawData)
 		rawData.itemTypes[itemType][IT_AUCTIONS][auctionID] = true
 		
 		return true
-	end
-	
-	function dataModel:CheckItemKnown(item)
-		return item and reverseItems[item] and true or false
 	end
 	
 	return dataModel

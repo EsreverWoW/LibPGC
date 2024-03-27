@@ -1,6 +1,3 @@
-	Alpha 0.5.0 r19
-- Initialization is now 63% faster (average)
-	
 	Alpha 0.5.0 r18
 - Added repost and false expiration detection (data model updated accordingly)
 - Improved posting queue unjam routine

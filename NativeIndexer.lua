@@ -65,7 +65,7 @@ function Internal.Indexer.Native()
 								for categoryName, categorySubtree in pairs(levelSubtree) do
 									if not category or categoryName:sub(1, category:len()) == category then
 										for itemName, nameSubtree in pairs(categorySubtree) do
-											if not name or itemName:find(name, 1, true) then
+											if not name or itemName:find(name) then
 												for price, priceSubtree in pairs(nameSubtree) do
 													if (not priceMin or price >= priceMin) and (not priceMax or price <= priceMax) then
 														for auctionID, itemType in pairs(priceSubtree) do
