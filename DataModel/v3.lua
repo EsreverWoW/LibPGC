@@ -1,25 +1,22 @@
 -- ***************************************************************************************************************************************************
 -- * v3.lua                                                                                                                                          *
 -- ***************************************************************************************************************************************************
+-- * LibPGC DataModel v3                                                                                                                             *
+-- ***************************************************************************************************************************************************
 -- * 0.4.4 / 2013.02.04 / Baanano: First version                                                                                                     *
 -- ***************************************************************************************************************************************************
 
-local addonDetail, addonData = ...
-local addonID = addonDetail.identifier
-local Internal, Public = addonData.Internal, addonData.Public
+local addonInfo, InternalInterface = ...
+local addonID = addonInfo.identifier
 
 local CheckFlag = function(value, flag) return bit.band(value, flag) == flag end
-local Converter = Internal.Utility.Converter
-local Release =
-	function()
-		if blTasks then
-			local contextHandle = blTasks.Task.Current()
-			if contextHandle then
-				contextHandle:Breath()
-			end
-		end
-	end
+local Converter = InternalInterface.Utility.Converter
+local Release = LibScheduler.Release
 local TInsert = table.insert
+local ipairs = ipairs
+local next = next
+local pairs = pairs
+local type = type
 
 local VERSION = 3
 local ITEM, AUCTIONS = 1, 2
@@ -663,4 +660,4 @@ local function DataModelBuilder(rawData)
 	return dataModel
 end
 
-Internal.Version.RegisterDataModel(VERSION, DataModelBuilder)
+InternalInterface.Version.RegisterDataModel(VERSION, DataModelBuilder)

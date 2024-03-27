@@ -1,22 +1,18 @@
 -- ***************************************************************************************************************************************************
--- * v1-to-v3.lua                                                                                                                                    *
+-- * Migration.lua                                                                                                                                   *
+-- ***************************************************************************************************************************************************
+-- * Handles migration between datamodels                                                                                                            *
 -- ***************************************************************************************************************************************************
 -- * 0.4.4 / 2012.12.19 / Baanano: First version                                                                                                     *
 -- ***************************************************************************************************************************************************
 
-local addonDetail, addonData = ...
-local addonID = addonDetail.identifier
-local Internal, Public = addonData.Internal, addonData.Public
+local addonInfo, InternalInterface = ...
+local addonID = addonInfo.identifier
 
-local Release =
-	function()
-		if blTasks then
-			local contextHandle = blTasks.Task.Current()
-			if contextHandle then
-				contextHandle:Breath()
-			end
-		end
-	end
+local Release = LibScheduler.Release
+local error = error
+local pairs = pairs
+local print = print
 
 local ORIGINAL_VERSION = 1
 local TARGET_VERSION = 3
@@ -27,7 +23,7 @@ local function Migration(oldModel)
 	local itemCount = 0
 	local auctionCount = 0
 	
-	local newModel = Internal.Version.GetDataModelBuilder(TARGET_VERSION)
+	local newModel = InternalInterface.Version.GetDataModelBuilder(TARGET_VERSION)
 	if not newModel then
 		error("Couldn't find a target data model builder")
 	end
@@ -58,4 +54,4 @@ local function Migration(oldModel)
 	return newModel, TARGET_VERSION
 end
 
-Internal.Version.RegisterMigrationProcedure(ORIGINAL_VERSION, Migration)
+InternalInterface.Version.RegisterMigrationProcedure(ORIGINAL_VERSION, Migration)

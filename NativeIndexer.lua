@@ -1,62 +1,65 @@
 -- ***************************************************************************************************************************************************
--- * NativeIndexer.lua                                                                                                                               *
+-- * Indexers/NativeIndexer.lua                                                                                                                      *
 -- ***************************************************************************************************************************************************
--- * 0.5.0 / 2013.09.29 / Baanano: Adapted to blTasks                                                                                                *
+-- * Search tree that allows to index the auctionDB in the same way that the native auction searcher                                                 *
+-- ***************************************************************************************************************************************************
 -- * 0.4.4 / 2012.08.12 / Baanano: Fixed minor category bugs                                                                                         *
 -- * 0.4.1 / 2012.07.10 / Baanano: Moved to LibPGC                                                                                                   *
 -- * 0.4.0 / 2012.05.31 / Baanano: Rewritten AuctionTree.lua                                                                                         *
 -- ***************************************************************************************************************************************************
 
-local addonDetail, addonData = ...
-local addonID = addonDetail.identifier
-local Internal, Public = addonData.Internal, addonData.Public
+local addonInfo, InternalInterface = ...
+local addonID = addonInfo.identifier
 
-function Internal.Indexer.Native()
+local Release = LibScheduler.Release
+local pairs = pairs
+
+InternalInterface.Indexers = InternalInterface.Indexers or {}
+
+function InternalInterface.Indexers.BuildNativeIndexer()
 	local nativeIndexer = {}
 	
-	local auctionIDs = {}
-	local searchTree = {}
+	nativeIndexer.auctionIDs = {}
+	nativeIndexer.searchTree = {}
 	
-	function nativeIndexer.AddAuction(itemType, auctionID, callings, rarity, level, category, name, price)
+	function nativeIndexer:AddAuction(itemType, auctionID, callings, rarity, level, category, name, price)
 		name = name:upper()
 		
 		for calling, flag in pairs(callings) do
 			if flag then
-				searchTree[calling] = searchTree[calling] or {}
-				searchTree[calling][rarity] = searchTree[calling][rarity] or {}
-				searchTree[calling][rarity][level] = searchTree[calling][rarity][level] or {}
-				searchTree[calling][rarity][level][category] = searchTree[calling][rarity][level][category] or {}
-				searchTree[calling][rarity][level][category][name] = searchTree[calling][rarity][level][category][name] or {}
-				searchTree[calling][rarity][level][category][name][price] = searchTree[calling][rarity][level][category][name][price] or {}
-				searchTree[calling][rarity][level][category][name][price][auctionID] = itemType
+				self.searchTree[calling] = self.searchTree[calling] or {}
+				self.searchTree[calling][rarity] = self.searchTree[calling][rarity] or {}
+				self.searchTree[calling][rarity][level] = self.searchTree[calling][rarity][level] or {}
+				self.searchTree[calling][rarity][level][category] = self.searchTree[calling][rarity][level][category] or {}
+				self.searchTree[calling][rarity][level][category][name] = self.searchTree[calling][rarity][level][category][name] or {}
+				self.searchTree[calling][rarity][level][category][name][price] = self.searchTree[calling][rarity][level][category][name][price] or {}
+				self.searchTree[calling][rarity][level][category][name][price][auctionID] = itemType
 			end
 		end
 		
-		auctionIDs[auctionID] = itemType
+		self.auctionIDs[auctionID] = itemType
 	end
 	
-	function nativeIndexer.RemoveAuction(auctionID, callings, rarity, level, category, name, price)
-		if not auctionIDs[auctionID] then return end
+	function nativeIndexer:RemoveAuction(auctionID, callings, rarity, level, category, name, price)
+		if not self.auctionIDs[auctionID] then return end
 		
 		name = name:upper()
 		
 		for calling, flag in pairs(callings) do
 			if flag then
-				searchTree[calling][rarity][level][category][name][price][auctionID] = nil
+				self.searchTree[calling][rarity][level][category][name][price][auctionID] = nil
 			end
 		end
 		
-		auctionIDs[auctionID] = nil
+		self.auctionIDs[auctionID] = nil
 	end
 	
-	function nativeIndexer.Search(calling, rarity, levelMin, levelMax, category, priceMin, priceMax, name)
-		local contextHandle = blTasks.Task.Current()
-		
+	function nativeIndexer:Search(calling, rarity, levelMin, levelMax, category, priceMin, priceMax, name)
 		local results = {}
 		
 		name = name and name:upper() or nil
 		
-		for callingName, callingSubtree in pairs(searchTree) do
+		for callingName, callingSubtree in pairs(self.searchTree) do
 			if not calling or calling == callingName then
 				for rarityName, raritySubtree in pairs(callingSubtree) do
 					if not rarity or rarity <= rarityName then
@@ -72,22 +75,32 @@ function Internal.Indexer.Native()
 															results[auctionID] = itemType
 														end
 													end
-													contextHandle:BreathShort()
+													Release()
 												end
 											end
-											contextHandle:BreathShort()
+											Release()
 										end
 									end
-									contextHandle:BreathShort()
+									Release()
 								end
 							end
-							contextHandle:BreathShort()
+							Release()
 						end
 					end
-					contextHandle:BreathShort()
+					Release()
 				end
 			end
-			contextHandle:BreathShort()
+			Release()
+		end
+		
+		return results
+	end
+	
+	function nativeIndexer:GetItemTypes(auctionIDs)
+		local results = {}
+
+		for auctionID in pairs(auctionIDs) do
+			results[auctionID] = self.auctionIDs[auctionID]
 		end
 		
 		return results

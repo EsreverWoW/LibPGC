@@ -1,6 +1,2 @@
 package-as: LibPGC
 manual-changelog: ChangeLog.txt
-enable-nolib-creation: no
-externals:
-	blTasks:
-		url: svn://svn.curseforge.net/rift/bltasks/mainline/trunk

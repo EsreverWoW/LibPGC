@@ -1,281 +1,265 @@
 -- ***************************************************************************************************************************************************
--- * PostQueue.lua                                                                                                                                   *
+-- * Services/PostQueue.lua                                                                                                                          *
 -- ***************************************************************************************************************************************************
--- * 0.5.0 / 2013.10.06 / Baanano: Adapted to blTasks, rewritten unjam code                                                                          *
+-- * Posts auctions, splitting stacks if needed                                                                                                      *
+-- ***************************************************************************************************************************************************
 -- * 0.4.12/ 2013.09.17 / Baanano: Updated events to the new model                                                                                   *
 -- * 0.4.4 / 2012.11.01 / Baanano: Added auto unjam (best effort)                                                                                    *
 -- * 0.4.1 / 2012.07.14 / Baanano: Updated for LibPGC                                                                                                *
 -- * 0.4.0 / 2012.06.17 / Baanano: Rewritten AHPostingService.lua                                                                                    *
 -- ***************************************************************************************************************************************************
 
-local addonDetail, addonData = ...
-local addonID = addonDetail.identifier
-local Internal, Public = addonData.Internal, addonData.Public
+local addonInfo, InternalInterface = ...
+local addonID = addonInfo.identifier
 
- -- TODO Move to constants
-local JAM_WAIT_SECONDS = 30
-local QUEUE_STATUS =
-{
-	EMPTY = 1,
-	PAUSED = 2,
-	JAMMED = 3,
-	NO_INTERACTION = 4,
-	WAITING = 5,
-	BUSY = 6,
-}
+_G[addonID] = _G[addonID] or {}
+local PublicInterface = _G[addonID]
+
+local AUTO_UNJAM_FRAMES = 60
+
+local CCreate = coroutine.create
+local CResume = coroutine.resume
+local CYield = coroutine.yield
+local CAPost = Command.Auction.Post
+local CEAttach = Command.Event.Attach
+local CIMove = Command.Item.Move
+local CISplit = Command.Item.Split
+local IInteraction = Inspect.Interaction
+local ICDetail = Inspect.Currency.Detail
+local IIDetail = Inspect.Item.Detail
+local IIList = Inspect.Item.List
+local IQStatus = Inspect.Queue.Status
+local MFloor = math.floor
+local MMax = math.max
+local MMin = math.min
+local TInsert = table.insert
+local TRemove = table.remove
+local UACost = Utility.Auction.Cost
+local UECreate = Utility.Event.Create
+local UISInventory = Utility.Item.Slot.Inventory
+
+local GetAuctionPostCallback = PublicInterface.GetAuctionPostCallback
+local CopyTableRecursive = InternalInterface.Utility.CopyTableRecursive
 
 local postingQueue = {}
 local paused = false
-local jammed = false
 local waitingUpdate = false
 local waitingPost = false
-local ChangedEvent = Utility.Event.Create(addonID, "Queue.Changed")
+local waitFrames = 5
+local postingCoroutine = nil
+local QueueChangedEvent = UECreate(addonID, "PostingQueueChanged")
+local QueueStatusChangedEvent = UECreate(addonID, "PostingQueueStatusChanged")
 
-local function QueueTask(taskHandle)
-	while true do
+local function PostingQueueCoroutine()
+	repeat
 		repeat
-			ChangedEvent()
-			
-			-- Wait till all conditions are met
-			while paused or jammed or waitingUpdate or waitingPost or #postingQueue <= 0 or not Inspect.Interaction("auction") or not Inspect.Queue.Status("global") do
-				taskHandle:Wait(blTasks.Wait.Frame() * blTasks.Wait.Interaction("auction") * blTasks.Wait.Queue("global"))
-			end
-			
-			ChangedEvent()
+			if paused or waitingUpdate or waitingPost or #postingQueue <= 0 or not IInteraction("auction") or not IQStatus("global") then break end
 
-			-- Find what itemTypes to post
-			local ordersByItemType = {}
-			do
-				local queueRemoved = false
-				
-				for index = #postingQueue, 1, -1 do
-					local order = postingQueue[index]
-					if order.amount <= 0 then
-						table.remove(postingQueue, index)
-						queueRemoved = true
-					else
-						ordersByItemType[order.itemType] = ordersByItemType[order.itemType] or {}
-						ordersByItemType[order.itemType][index] = { amount = order.amount, direct = {}, split = {}, merge = {}, }
-					end
-				end
+			local postTable = postingQueue[1]
+			local itemType = postTable.itemType
+
+			if postTable.amount <= 0 then -- This post is finished
+				TRemove(postingQueue, 1)
+				QueueChangedEvent()
+				QueueStatusChangedEvent()
+				break
 			end
-		
-			-- Match slots with orders
+
+			local searchStackSize = MMin(postTable.stackSize, postTable.amount)
+			
+			local lowerItems = {}
+			local exactItems = {}
+			local higherItems = {}
+
+			local slot = UISInventory()
+			local items = IIList(slot)
 			local freeSlots = false
-			for slotID, itemID in pairs(Inspect.Item.List(Utility.Item.Slot.Inventory())) do
+			for slotID, itemID in pairs(items) do repeat
 				if type(itemID) == "boolean" then
 					freeSlots = true
-				else
-					local itemDetail = Inspect.Item.Detail(itemID)
-					if itemDetail and not itemDetail.bound and ordersByItemType[itemDetail.type] then
-						local stacks = itemDetail.stack or 1
-						
-						for orderID, orderData in pairs(ordersByItemType[itemDetail.type]) do
-							if stacks == orderData.amount then
-								orderData.direct[#orderData.direct + 1] = itemDetail.id
-							elseif stacks > orderData.amount then
-								orderData.split[#orderData.split + 1] = slotID
-							elseif stacks < orderData.amount then
-								orderData.merge[#orderData.merge + 1] = slotID
-							end
-						end
-					end
-				end
-			end
-			
-			-- Flatten orders
-			local orders = {}
-			for itemType, itemTypeOrders in pairs(ordersByItemType) do
-				for orderID, orderData in pairs(itemTypeOrders) do
-					orders[orderID] = orderData
-				end
-			end
-			
-			-- Search best matches
-			local bogusID, directID, mergeID, splitID = nil, nil, nil, nil
-			for orderID = #postingQueue, 1, -1 do
-				local order = orders[orderID]
-				
-				if order then
-					if #order.direct >= 1 then
-						directID = orderID
-					elseif #order.merge >= 2 then
-						mergeID = orderID
-					elseif #order.split >= 1 then
-						splitID = orderID
-					else
-						bogusID = orderID
-					end
-				else
-					bogusID = orderID
-				end
-			end
-			
-			-- Remove BogusID
-			if bogusID then
-				table.remove(postingQueue, bogusID)
-				ChangedEvent()
-				break
-			end
-			
-			-- Post DirectID
-			if directID then
-				local order = orders[directID]
-				local amount, item = order.amount, order.direct[1]
-
-				local duration = postingQueue[directID].duration
-				local bid = postingQueue[directID].unitBidPrice * amount
-				local buy = postingQueue[directID].unitBuyoutPrice and postingQueue[directID].unitBuyoutPrice * amount or nil
-					
-				local cost = Utility.Auction.Cost(item, duration, bid, buy)
-				local coinDetail = Inspect.Currency.Detail("coin")
-				local money = coinDetail and coinDetail.stack or 0
-					
-				if money < cost then
-					table.remove(postingQueue, directID)
-					ChangedEvent()
 					break
 				end
-					
+				local itemDetail = IIDetail(itemID)
+				if itemDetail.bound == true or itemDetail.type ~= itemType then break end
+				
+				local itemStack = itemDetail.stack or 1
+				local itemInfo = { itemID = itemID, slotID = slotID }
+				
+				if itemStack < searchStackSize then
+					TInsert(lowerItems, itemInfo)
+				elseif itemStack == searchStackSize then
+					TInsert(exactItems, itemInfo)
+				else
+					TInsert(higherItems, itemInfo)
+				end
+			until true end
+			
+			if #exactItems > 0 then -- Found an exact match!
+				local item = exactItems[1].itemID
+				local tim = postTable.duration
+				local bid = postTable.unitBidPrice * searchStackSize
+				local buyout = nil
+				if postTable.unitBuyoutPrice then 
+					buyout = postTable.unitBuyoutPrice * searchStackSize 
+				end
+
+				local cost = UACost(item, tim, bid, buyout)
+				local coinDetail = ICDetail("coin")
+				local money = coinDetail and coinDetail.stack or 0
+				if money < cost then -- Not enough money to post, abort
+					TRemove(postingQueue, 1)
+					QueueChangedEvent()
+					QueueStatusChangedEvent()
+					break
+				end
+				
 				waitingUpdate = true
 				waitingPost = true
-					
-				local postCallback = Public.Callback.Post(postingQueue[directID].itemType, duration, bid, buy)
-				Command.Auction.Post(item, duration, bid, buy, function(...) waitingPost = false; postCallback(...); end)
-					
-				postingQueue[directID].amount = postingQueue[directID].amount - amount
-				if postingQueue[directID].amount <= 0 then
-					table.remove(postingQueue, directID)
-				end
-				
-				ChangedEvent()
+				local postCallback = GetAuctionPostCallback(itemType, tim, bid, buyout)
+				CAPost(item, tim, bid, buyout, function(...) postCallback(...); waitingPost = false; QueueStatusChangedEvent(); end)
+				postingQueue[1].amount = postingQueue[1].amount - searchStackSize
+				QueueChangedEvent()
+				QueueStatusChangedEvent()
 				break
 			end
 
-			-- Merge MergeID
-			if mergeID then
-				local order = orders[mergeID]
-				local firstSlot, secondSlot = order.merge[1], order.merge[2]
-				
-				Command.Item.Move(firstSlot, secondSlot)
+			if #lowerItems > 1 then -- Need to join two items
+				local firstItemSlot = lowerItems[1].slotID
+				local secondItemSlot = lowerItems[2].slotID
+				CIMove(firstItemSlot, secondItemSlot)
 				waitingUpdate = true
-				
-				ChangedEvent()
+				QueueStatusChangedEvent()
 				break
 			end
 
-			-- Split SplitID
-			if splitID then
-				if freeSlots then
-					local order = orders[splitID]
-					local slot, amount = order.split[1], order.amount
-					Command.Item.Split(slot, amount)
+			if #higherItems > 0 then -- Need to split an item
+				if freeSlots then -- There are free slots, split
+					local item = higherItems[1].itemID
+					CISplit(item, searchStackSize)
 					waitingUpdate = true
-				else
-					jammed = true
+					QueueStatusChangedEvent()
+					break
+				else -- No free slots, move the item to the end of the queue
+					TInsert(postingQueue, postTable)
+					TRemove(postingQueue, 1)
+					waitFrames = AUTO_UNJAM_FRAMES
+					QueueChangedEvent()
+					QueueStatusChangedEvent()
+					break	
 				end
-				
-				ChangedEvent()
-				break
 			end
-			
+
+			-- If execution reach this point, there aren't enough stacks of the item to post, abort
+			TRemove(postingQueue, 1)
+			QueueChangedEvent()
+			QueueStatusChangedEvent()
 		until true
-		
-		taskHandle:BreathLong()
+		CYield()
+	until false
+end
+
+local function OnSystemUpdate()
+	if not postingCoroutine then
+		postingCoroutine = CCreate(PostingQueueCoroutine)
+	end
+	if waitFrames > 0 then
+		waitFrames = waitFrames - 1
+	else
+		CResume(postingCoroutine)
 	end
 end
-blTasks.Task.Create(QueueTask):Start():Abandon()
+CEAttach(Event.System.Update.Begin, OnSystemUpdate, addonID .. ".PostQueue.OnSystemUpdate")
 
 local function OnWaitingUnlock()
-	waitingUpdate = false
-	jammed = false
+	if waitingUpdate then
+		waitingUpdate = false
+		QueueStatusChangedEvent()
+	end
 end
-Command.Event.Attach(Event.Item.Slot, OnWaitingUnlock, addonID .. ".Post.OnItemSlot")
-Command.Event.Attach(Event.Item.Update, OnWaitingUnlock, addonID .. ".Post.OnItemUpdate")
+CEAttach(Event.Item.Slot, OnWaitingUnlock, addonID .. ".PostQueue.OnWaitingUnlockSlot")
+CEAttach(Event.Item.Update, OnWaitingUnlock, addonID .. ".PostQueue.OnWaitingUnlockUpdate")
 
+local function OnInteractionChanged(h, interaction, state)
+	if interaction == "auction" then
+		QueueStatusChangedEvent()
+	end
+end
+CEAttach(Event.Interaction, OnInteractionChanged, addonID .. ".PostQueue.OnInteractionChanged")
 
-function Public.Queue.Post(item, stackSize, amount, unitBidPrice, unitBuyoutPrice, duration)
+local function OnGlobalQueueChanged(h, queue)
+	if queue == "global" then
+		QueueStatusChangedEvent()
+	end
+end
+CEAttach(Event.Queue.Status, OnGlobalQueueChanged, addonID .. ".PostQueue.OnGlobalQueueChanged")
+
+function PublicInterface.PostItem(item, stackSize, amount, unitBidPrice, unitBuyoutPrice, duration)
 	if not item or not amount or not stackSize or not unitBidPrice or not duration then return false end
 	
-	amount, stackSize, unitBidPrice, duration = math.floor(amount), math.floor(stackSize), math.floor(unitBidPrice), math.floor(duration)
-	if unitBuyoutPrice then unitBuyoutPrice = math.max(math.floor(unitBuyoutPrice), unitBidPrice) end
+	amount, stackSize, unitBidPrice, duration = MFloor(amount), MFloor(stackSize), MFloor(unitBidPrice), MFloor(duration)
+	if unitBuyoutPrice then unitBuyoutPrice = MMax(MFloor(unitBuyoutPrice), unitBidPrice) end
 	if amount <= 0 or stackSize <= 0 or unitBidPrice <= 0 or (duration ~= 12 and duration ~= 24 and duration ~= 48) then return false end
 
 	local itemType = nil
 	if item:sub(1, 1) == "I" then
 		itemType = item
 	else
-		local ok, itemDetail = pcall(Inspect.Item.Detail, item)
+		local ok, itemDetail = pcall(IIDetail, item)
 		itemType = ok and itemDetail and itemDetail.type or nil
 	end
 	if not itemType then return false end
 	
-	while amount > 0 do
-		local stacks = amount < stackSize and amount or stackSize
-		
-		postingQueue[#postingQueue + 1] =
-		{ 
-			itemType = itemType,
-			amount = stacks,
-			unitBidPrice = unitBidPrice,
-			unitBuyoutPrice = unitBuyoutPrice,
-			duration = duration,
-		}
-		
-		amount = amount - stacks
-	end
+	local postTable = 
+	{ 
+		itemType = itemType, 
+		stackSize = stackSize, 
+		amount = amount, 
+		unitBidPrice = unitBidPrice, 
+		unitBuyoutPrice = unitBuyoutPrice, 
+		duration = duration,
+	}
+	TInsert(postingQueue, postTable)
 	
-	ChangedEvent()
-	
+	QueueChangedEvent()
+	QueueStatusChangedEvent()
 	return true
 end
 
-function Public.Queue.CancelByIndex(index)
+function PublicInterface.CancelPostingByIndex(index)
 	if index < 0 or index > #postingQueue then return end
-	table.remove(postingQueue, index)
-	ChangedEvent()
+	TRemove(postingQueue, index)
+	QueueChangedEvent()
+	QueueStatusChangedEvent()
 end
 
-function Public.Queue.CancelAll()
+function PublicInterface.CancelAll()
 	postingQueue = {}
-	ChangedEvent()
+	QueueChangedEvent()
+	QueueStatusChangedEvent()
 end
 
-function Public.Queue.Detail()
-	return blUtil.Copy.Deep(postingQueue)
+function PublicInterface.GetPostingQueue()
+	return CopyTableRecursive(postingQueue)
 end
 
-function Public.Queue.Status()
-	local status = QUEUE_STATUS.BUSY
-	if paused then
-		status = QUEUE_STATUS.PAUSED
-	elseif #postingQueue <= 0 then
-		status = QUEUE_STATUS.EMPTY
-	elseif jammed then
-		status = QUEUE_STATUS.JAMMED
-	elseif not Inspect.Interaction("auction") then
-		status = QUEUE_STATUS.NO_INTERACTION
-	elseif waitingUpdate or waitingPost or not Inspect.Queue.Status("global") then
-		status = QUEUE_STATUS.WAITING
+function PublicInterface.GetPostingQueueStatus()
+	local status = 0 -- Busy
+	if paused then status = 1 -- Paused
+	elseif #postingQueue <= 0 then status = 2 -- Empty
+	elseif not IInteraction("auction") then status = 3 -- Not at the AH
+	elseif waitingUpdate or waitingPost or not IQStatus("global") then status = 4 -- Waiting
+	elseif waitFrames > 0 then status = 5 -- Jammed
 	end
 	
 	return status, #postingQueue
 end
 
-function Public.Queue.Pause(pause)
-	if pause == paused then return end
-	paused = pause
-	ChangedEvent()
+function PublicInterface.GetPostingQueuePaused()
+	return paused
 end
 
---[[ TODO Documentation
-	.Queue.Post
-	.Queue.CancelByIndex
-	.Queue.CancelAll
-	.Queue.Detail
-	.Queue.Status
-	.Queue.Pause
-	.Queue.QUEUE_STATUS
-
-	Event..Queue.Changed
-]]
+function PublicInterface.SetPostingQueuePaused(pause)
+	if pause == paused then return end
+	paused = pause
+	QueueStatusChangedEvent()
+end

@@ -11,8 +11,9 @@ Description =
 	English = "LibPGC is a Rift Addon Library that extends AH functionality.",
 }
 Author = "Baanano"
-Version = "0.5.0 r18"
+Version = "0.4.13"
 Email = "baanano.rift@gmail.com"
+Website = "http://www.bananah.net/"
 Environment = "2.4"
 SavedVariables =
 {
@@ -20,28 +21,22 @@ SavedVariables =
 }
 Embed =
 {
-	blTasks = true,
+	LibScheduler = true,
 }
 Dependencies =
 {
-	blTasks = { "required", "before" },
-	blUtil = { "required", "before" },
+	LibScheduler = { "required", "before" },
 }
 RunOnStartup =
 {
-	"Prolog.lua",
-	"Constants.lua",
 	"Utility.lua",
 	"Version.lua",
 	"DataModel/v1.lua",
 	"DataModel/v2.lua",
 	"DataModel/v3.lua",
-	"DataModel/v4.lua",
 	"Migration/v1-to-v3.lua",
 	"Migration/v2-to-v3.lua",
-	"Migration/v3-to-v4.lua",
 	"NativeIndexer.lua",
 	"Scanner.lua",
 	"PostQueue.lua",
-	"Epilog.lua",
 }
