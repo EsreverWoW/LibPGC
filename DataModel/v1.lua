@@ -15,8 +15,8 @@ local type = type
 local VERSION = 1
 local DEFAULT_RARITY = 2
 local DEFAULT_LASTSEEN = 0
-local RARITIES_C2N = { "sellable", "common", "uncommon", "rare", "epic", "relic", "transcendant", "quest", }
-local RARITIES_N2C = { sellable = 1, [""] = 2, common = 2, uncommon = 3, rare = 4, epic = 5, relic = 6, transcendant = 7, quest = 8, }
+local RARITIES_C2N = { "sellable", "common", "uncommon", "rare", "epic", "relic", "transcendent", "ascended", "eternal", }
+local RARITIES_N2C = { sellable = 1, [""] = 2, common = 2, uncommon = 3, rare = 4, epic = 5, relic = 6, transcendent = 7, ascended = 8, eternal = 9, }
 local MAX_DATA_AGE = 30 * 24 * 60 * 60
 
 local function DataModelBuilder(rawData)

@@ -55,8 +55,8 @@ local lastTask = nil
 
 local AuctionDataEvent = Utility.Event.Create(addonID, "AuctionData")
 
-local RARITIES_C2N = { "sellable", "common", "uncommon", "rare", "epic", "relic", "transcendant", "quest", }
-local RARITIES_N2C = { sellable = 1, [""] = 2, common = 2, uncommon = 3, rare = 4, epic = 5, relic = 6, transcendant = 7, quest = 8, }
+local RARITIES_C2N = { "sellable", "common", "uncommon", "rare", "epic", "relic", "transcendent", "ascended", "eternal", }
+local RARITIES_N2C = { sellable = 1, [""] = 2, common = 2, uncommon = 3, rare = 4, epic = 5, relic = 6, transcendent = 7, ascended = 8, eternal = 9, }
 
 local function TryMatchAuction(auctionID)
 	if alreadyMatched[auctionID] then return end
