@@ -46,7 +46,7 @@ local AuctionConverter = Converter({
 })
 
 local function DataModelBuilder(rawData)
-	local IC_WARRIOR, IC_CLERIC, IC_ROGUE, IC_MAGE = 8, 4, 2, 1
+	local IC_WARRIOR, IC_CLERIC, IC_ROGUE, IC_MAGE, IC_PRIMALIST = 16, 8, 4, 2, 1
 	local AF_OWN, AF_BIDDED, AF_BEFOREEXPIRATION, AF_OWNBOUGHT, AF_CANCELLED = 128, 64, 32, 16, 8
 
 	-- If rawData is empty, create an empty model
@@ -156,6 +156,7 @@ local function DataModelBuilder(rawData)
 					cleric = CheckFlag(callings, IC_CLERIC),
 					rogue = CheckFlag(callings, IC_ROGUE),
 					mage = CheckFlag(callings, IC_MAGE),
+					primalist = CheckFlag(callings, IC_PRIMALIST),
 				},
 				itemData.rarity,
 				itemData.lastSeen
@@ -195,6 +196,7 @@ local function DataModelBuilder(rawData)
 			cleric = CheckFlag(callings, IC_CLERIC),
 			rogue = CheckFlag(callings, IC_ROGUE),
 			mage = CheckFlag(callings, IC_MAGE),
+			primalist = CheckFlag(callings, IC_PRIMALIST),
 		}
 	end
 	
@@ -245,7 +247,8 @@ local function DataModelBuilder(rawData)
 		itemData.callings = (requiredCallings.warrior and IC_WARRIOR or 0) +
 		                    (requiredCallings.cleric and IC_CLERIC or 0) +
 		                    (requiredCallings.rogue and IC_ROGUE or 0) +
-		                    (requiredCallings.mage and IC_MAGE or 0)
+		                    (requiredCallings.mage and IC_MAGE or 0) +
+							(requiredCallings.primalist and IC_PRIMALIST or 0)
 		itemData.rarity = rarity
 		itemData.lastSeen = lastSeen
 		
@@ -327,7 +330,8 @@ local function DataModelBuilder(rawData)
 		itemData.callings = (requiredCallings.warrior and IC_WARRIOR or 0) +
 		                    (requiredCallings.cleric and IC_CLERIC or 0) +
 		                    (requiredCallings.rogue and IC_ROGUE or 0) +
-		                    (requiredCallings.mage and IC_MAGE or 0)
+		                    (requiredCallings.mage and IC_MAGE or 0) +
+							(requiredCallings.primalist and IC_PRIMALIST or 0)
 		rawData.items[itemType][ITEM] = tostring(itemData)
 
 		return true

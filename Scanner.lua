@@ -138,13 +138,14 @@ local function OnAuctionData(h, criteria, auctions)
 			cleric = (not callings or callings:find("cleric")) and true or false,
 			rogue = (not callings or callings:find("rogue")) and true or false,
 			mage = (not callings or callings:find("mage")) and true or false,
+			primalist = (not callings or callings:find("primalist")) and true or false,
 		}
 		
 		if not dataModel:CheckItemExists(itemType) then
 			dataModel:StoreItem(itemType, name, icon, category, level, callings, rarity, auctionScanTime)
 		else
 			local storedName, storedIcon, storedCategory, storedLevel, storedCallings, storedRarity = dataModel:RetrieveItemData(itemType)
-			if name ~= storedName or icon ~= storedIcon or category ~= storedCategory or level ~= storedLevel or callings.warrior ~= storedCallings.warrior or callings.cleric ~= storedCallings.cleric or callings.rogue ~= storedCallings.rogue or callings.mage ~= storedCallings.mage or rarity ~= storedRarity then
+			if name ~= storedName or icon ~= storedIcon or category ~= storedCategory or level ~= storedLevel or callings.warrior ~= storedCallings.warrior or callings.cleric ~= storedCallings.cleric or callings.rogue ~= storedCallings.rogue or callings.mage ~= storedCallings.mage or callings.primalist ~= storedCallings.primalist or rarity ~= storedRarity then
 				for auctionID in pairs(dataModel:RetrieveActiveAuctions(itemType)) do
 					local price = dataModel:RetrieveAuctionBuy(itemType, auctionID)
 					

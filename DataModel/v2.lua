@@ -23,7 +23,7 @@ local MAX_DATA_AGE = 30 * 24 * 60 * 60
 
 local function DataModelBuilder(rawData)
 	local I_NAME, I_ICON, I_CATEGORY, I_LEVEL, I_CALLINGS, I_RARITY, I_LASTSEEN = 1, 2, 3, 4, 5, 6, 7
-	local IC_WARRIOR, IC_CLERIC, IC_ROGUE, IC_MAGE = 1, 2, 3, 4
+	local IC_WARRIOR, IC_CLERIC, IC_ROGUE, IC_MAGE, IC_PRIMALIST = 1, 2, 3, 4, 5
 	local A_SELLER, A_BID, A_BUY, A_OWNBID, A_FIRSTSEEN, A_LASTSEEN, A_MINEXPIRE, A_MAXEXPIRE, A_STACK, A_FLAGS = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 	local AF_OWN, AF_BIDDED, AF_BEFOREEXPIRATION, AF_OWNBOUGHT, AF_CANCELLED = 1, 2, 3, 4, 5
 
@@ -131,6 +131,7 @@ local function DataModelBuilder(rawData)
 					cleric = itemData[I_CALLINGS][IC_CLERIC] and true or false,
 					rogue = itemData[I_CALLINGS][IC_ROGUE] and true or false,
 					mage = itemData[I_CALLINGS][IC_MAGE] and true or false,
+					primalist = itemData[I_CALLINGS][IC_PRIMALIST] and true or false,
 				},
 				itemData[I_RARITY],
 				itemData[I_LASTSEEN]
@@ -169,6 +170,7 @@ local function DataModelBuilder(rawData)
 			cleric = itemData[I_CALLINGS][IC_CLERIC] and true or false,
 			rogue = itemData[I_CALLINGS][IC_ROGUE] and true or false,
 			mage = itemData[I_CALLINGS][IC_MAGE] and true or false,
+			primalist = itemData[I_CALLINGS][IC_PRIMALIST] and true or false,
 		}
 	end
 	
@@ -223,6 +225,7 @@ local function DataModelBuilder(rawData)
 				[IC_CLERIC] = requiredCallings.cleric and 1 or nil,
 				[IC_ROGUE] = requiredCallings.rogue and 1 or nil,
 				[IC_MAGE] = requiredCallings.mage and 1 or nil,
+				[IC_PRIMALIST] = requiredCallings.primalist and 1 or nil,
 			},
 			[I_RARITY] = rarity,
 			[I_LASTSEEN] = lastSeen,
@@ -298,6 +301,7 @@ local function DataModelBuilder(rawData)
 			[IC_CLERIC] = requiredCallings.cleric and 1 or nil,
 			[IC_ROGUE] = requiredCallings.rogue and 1 or nil,
 			[IC_MAGE] = requiredCallings.mage and 1 or nil,
+			[IC_PRIMALIST] = requiredCallings.primalist and 1 or nil,
 		}
 
 		return true

@@ -80,6 +80,7 @@ local function DataModelBuilder(rawData)
 				cleric = itemData.callings and itemData.callings.cleric and true or false,
 				rogue = itemData.callings and itemData.callings.rogue and true or false,
 				mage = itemData.callings and itemData.callings.mage and true or false,
+				primalist = itemData.callings and itemData.callings.primalist and true or false,
 			   },
 			   RARITIES_N2C[itemData.rarity] or DEFAULT_RARITY,
 			   itemData.lastSeen or DEFAULT_LASTSEEN
@@ -111,6 +112,7 @@ local function DataModelBuilder(rawData)
 			cleric = callings.cleric and true or false,
 			rogue = callings.rogue and true or false,
 			mage = callings.mage and true or false,
+			primalist = callings.primalist and true or false,
 		}
 	end
 	
@@ -140,6 +142,7 @@ local function DataModelBuilder(rawData)
 			cleric = requiredCallings.cleric and true or nil,
 			rogue = requiredCallings.rogue and true or nil,
 			mage = requiredCallings.mage and true or nil,
+			primalist = requiredCallings.primalist and true or nil,
 		}
 		rawData[itemType].rarity = RARITIES_C2N[rarity]
 		rawData[itemType].lastSeen = lastSeen
@@ -179,6 +182,7 @@ local function DataModelBuilder(rawData)
 			cleric = requiredCallings.cleric and true or nil,
 			rogue = requiredCallings.rogue and true or nil,
 			mage = requiredCallings.mage and true or nil,
+			primalist = requiredCallings.primalist and true or nil,
 		}
 		return true
 	end
