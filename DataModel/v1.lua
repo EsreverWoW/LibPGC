@@ -27,9 +27,10 @@ local function DataModelBuilder(rawData)
 
 	-- Perform maintenance
 	local purgeTime = Inspect.Time.Server() - MAX_DATA_AGE
-	
+
+	local hasAuctions
 	for itemType, itemData in pairs(rawData) do
-		local hasAuctions = hasAuctions or (next(itemData.activeAuctions) and true or false)
+		hasAuctions = hasAuctions or (next(itemData.activeAuctions) and true or false)
 		for auctionID, auctionData in pairs(itemData.expiredAuctions) do
 			if auctionData.lastSeen < purgeTime then
 				itemData.expiredAuctions[auctionID] = nil
@@ -267,8 +268,7 @@ local function DataModelBuilder(rawData)
 			   auctionData.ownBidded,
 			   auctionData.firstSeen,
 			   auctionData.lastSeen,
-			   auctionData.minExpire,
-			   auctionData.maxExpire,
+			   auctionData.remaining,
 			   auctionData.stack,
 			   {
 				own = auctionData.own and true or false,
@@ -309,15 +309,10 @@ local function DataModelBuilder(rawData)
 		local auctionData = itemType and rawData[itemType] and (rawData[itemType].activeAuctions[auctionID] or rawData[itemType].expiredAuctions[auctionID]) or nil
 		return auctionData and auctionData.lastSeen or nil
 	end
-	
-	function dataModel:RetrieveAuctionMinExpire(itemType, auctionID)
+
+	function dataModel:RetrieveAuctionRemaining(itemType, auctionID)
 		local auctionData = itemType and rawData[itemType] and (rawData[itemType].activeAuctions[auctionID] or rawData[itemType].expiredAuctions[auctionID]) or nil
-		return auctionData and auctionData.minExpire or nil
-	end
-	
-	function dataModel:RetrieveAuctionMaxExpire(itemType, auctionID)
-		local auctionData = itemType and rawData[itemType] and (rawData[itemType].activeAuctions[auctionID] or rawData[itemType].expiredAuctions[auctionID]) or nil
-		return auctionData and auctionData.maxExpire or nil
+		return auctionData and auctionData.remaining or nil
 	end
 	
 	function dataModel:RetrieveAuctionStack(itemType, auctionID)
@@ -338,8 +333,8 @@ local function DataModelBuilder(rawData)
 	   }
 	end
 
-	function dataModel:StoreAuction(itemType, auctionID, active, seller, bid, buy, ownBid, firstSeen, lastSeen, minExpire, maxExpire, stack, flags)
-		if not itemType or not auctionID or not seller or not bid or not buy or not ownBid or not firstSeen or not minExpire or not maxExpire or not stack then return false end
+	function dataModel:StoreAuction(itemType, auctionID, active, seller, bid, buy, ownBid, firstSeen, lastSeen, remaining, stack, flags)
+		if not itemType or not auctionID or not seller or not bid or not buy or not ownBid or not firstSeen or not remaining or not stack then return false end
 		if not flags or type(flags) ~= "table" then return false end
 		local itemData = rawData[itemType]
 		if not itemData then return false end
@@ -362,8 +357,7 @@ local function DataModelBuilder(rawData)
 		auctionData.ownBidded = ownBid
 		auctionData.firstSeen = firstSeen
 		auctionData.lastSeen = lastSeen
-		auctionData.minExpire = minExpire
-		auctionData.maxExpire = maxExpire
+		auctionData.remaining = remaining
 		auctionData.stack = stack
 		auctionData.own = flags.own or nil
 		auctionData.bidded = flags.bidded or nil
@@ -433,24 +427,14 @@ local function DataModelBuilder(rawData)
 		auctionData.lastSeen = lastSeen
 		return true
 	end
-	
-	function dataModel:ModifyAuctionMinExpire(itemType, auctionID, minExpire)
-		if not itemType or not auctionID or not minExpire then return false end
+
+	function dataModel:ModifyAuctionRemaining(itemType, auctionID, remaining)
+		if not itemType or not auctionID or not remaining then return false end
 		
 		local auctionData = rawData[itemType] and (rawData[itemType].activeAuctions[auctionID] or rawData[itemType].expiredAuctions[auctionID]) or nil
 		if not auctionData then return false end
 		
-		auctionData.minExpire = minExpire
-		return true
-	end
-	
-	function dataModel:ModifyAuctionMaxExpire(itemType, auctionID, maxExpire)
-		if not itemType or not auctionID or not maxExpire then return false end
-		
-		local auctionData = rawData[itemType] and (rawData[itemType].activeAuctions[auctionID] or rawData[itemType].expiredAuctions[auctionID]) or nil
-		if not auctionData then return false end
-		
-		auctionData.maxExpire = maxExpire
+		auctionData.remaining = remaining
 		return true
 	end
 	

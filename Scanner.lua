@@ -71,10 +71,7 @@ local function TryMatchAuction(auctionID)
 	
 	for index, pendingData in ipairs(pending) do
 		if not pendingData.matched and pendingData.bid == bid and pendingData.buy == buy then
-			local firstSeen = dataModel:RetrieveAuctionFirstSeen(itemType, auctionID)
-			
-			dataModel:ModifyAuctionMinExpire(itemType, auctionID, pendingData.timestamp + pendingData.tim * 3600)
-			dataModel:ModifyAuctionMaxExpire(itemType, auctionID, firstSeen + pendingData.tim * 3600)
+			dataModel:ModifyAuctionRemaining(itemType, auctionID, pendingData.timestamp + pendingData.duration * 3600)
 			
 			pendingPosts[itemType][index].matched = true
 			alreadyMatched[auctionID] = true
@@ -94,10 +91,7 @@ local function TryMatchPost(itemType, tim, timestamp, bid, buyout)
 			local auctionBuy = dataModel:RetrieveAuctionBuy(itemType, auctionID)
 			
 			if bid == auctionBid and (buyout or 0) == auctionBuy then
-				local firstSeen = dataModel:RetrieveAuctionFirstSeen(itemType, auctionID)
-				
-				dataModel:ModifyAuctionMinExpire(itemType, auctionID, timestamp + tim * 3600)
-				dataModel:ModifyAuctionMaxExpire(itemType, auctionID, firstSeen + tim * 3600)
+				dataModel:ModifyAuctionRemaining(itemType, auctionID, timestamp + tim * 3600)
 				
 				pendingAuctions[itemType][auctionID] = nil
 				alreadyMatched[auctionID] = true
@@ -112,12 +106,6 @@ end
 
 local function OnAuctionData(h, criteria, auctions)
 	local auctionScanTime = Time()
-	local expireTimes = 
-	{ 
-		short =		{ auctionScanTime, 			auctionScanTime + 7200 }, 
-		medium =	{ auctionScanTime + 7200, 	auctionScanTime + 43200 }, 
-		long =		{ auctionScanTime + 43200, 	auctionScanTime + 172800 },
-	}
 
 	local totalAuctions, newAuctions, updatedAuctions, removedAuctions, beforeExpireAuctions = {}, {}, {}, {}, {}
 	local totalItemTypes, newItemTypes, updatedItemTypes, removedItemTypes, modifiedItemTypes = {}, {}, {}, {}, {}
@@ -174,7 +162,7 @@ local function OnAuctionData(h, criteria, auctions)
 		if not dataModel:CheckAuctionActive(itemType, auctionID) then
 			dataModel:StoreAuction(itemType, auctionID, true, auctionDetail.seller,
 			                       auctionDetail.bid, auctionDetail.buyout or 0, auctionDetail.bidder and auctionDetail.bidder == playerName and auctionDetail.bid or 0,
-							       auctionScanTime, auctionScanTime, expireTimes[auctionDetail.time][1], expireTimes[auctionDetail.time][2],
+							       auctionScanTime, auctionScanTime, auctionScanTime + auctionDetail.remaining,
 							       auctionDetail.itemStack or 1,
 								   {
 									own = auctionDetail.seller == playerName and true or false,
@@ -197,15 +185,7 @@ local function OnAuctionData(h, criteria, auctions)
 		else
 			dataModel:ModifyAuctionLastSeen(itemType, auctionID, auctionScanTime)
 
-			local minExpire = dataModel:RetrieveAuctionMinExpire(itemType, auctionID)
-			if expireTimes[auctionDetail.time][1] > minExpire then
-				dataModel:ModifyAuctionMinExpire(itemType, auctionID, expireTimes[auctionDetail.time][1])
-			end
-			
-			local maxExpire = dataModel:RetrieveAuctionMaxExpire(itemType, auctionID)
-			if expireTimes[auctionDetail.time][2] < maxExpire then
-				dataModel:ModifyAuctionMaxExpire(itemType, auctionID, expireTimes[auctionDetail.time][2])
-			end
+			dataModel:ModifyAuctionRemaining(itemType, auctionID, auctionScanTime + auctionDetail.remaining)
 			
 			if auctionDetail.bidder and auctionDetail.bidder == playerName then
 				dataModel:ModifyAuctionOwnBid(itemType, auctionID, auctionDetail.bid)
@@ -257,8 +237,8 @@ local function OnAuctionData(h, criteria, auctions)
 						TInsert(removedAuctions, auctionID)
 						removedItemTypes[itemType] = true
 					
-						local minExpire = dataModel:RetrieveAuctionMinExpire(itemType, auctionID)
-						if auctionScanTime < minExpire then
+						local remaining = dataModel:RetrieveAuctionRemaining(itemType, auctionID)
+						if auctionScanTime < remaining then
 							local flags = dataModel:RetrieveAuctionFlags(itemType, auctionID)
 							flags.beforeExpiration = true
 							dataModel:ModifyAuctionFlags(itemType, auctionID, flags)
@@ -284,8 +264,8 @@ local function OnAuctionData(h, criteria, auctions)
 						TInsert(removedAuctions, auctionID)
 						removedItemTypes[itemType] = true
 						
-						local minExpire = dataModel:RetrieveAuctionMinExpire(itemType, auctionID)
-						if auctionScanTime < minExpire then
+						local remaining = dataModel:RetrieveAuctionRemaining(itemType, auctionID)
+						if auctionScanTime < remaining then
 							local flags = dataModel:RetrieveAuctionFlags(itemType, auctionID)
 							flags.beforeExpiration = true
 							dataModel:ModifyAuctionFlags(itemType, auctionID, flags)
@@ -357,32 +337,6 @@ local function OnAuctionData(h, criteria, auctions)
 				
 				Release()
 			until not minPageIndex
-			
-			for index = 2, #knownAuctions, 1 do
-				local auctionID = knownAuctions[index]
-				local prevAuctionID = knownAuctions[index - 1]
-				
-				local minExpire = dataModel:RetrieveAuctionMinExpire(cachedAuctions[auctionID], auctionID)
-				local previousMinExpire = dataModel:RetrieveAuctionMinExpire(cachedAuctions[prevAuctionID], prevAuctionID)
-				
-				if minExpire < previousMinExpire then
-					dataModel:ModifyAuctionMinExpire(cachedAuctions[auctionID], auctionID, previousMinExpire)
-				end
-				Release()
-			end
-			
-			for index = #knownAuctions - 1, 1, -1 do
-				local auctionID = knownAuctions[index]
-				local nextAuctionID = knownAuctions[index + 1]
-
-				local maxExpire = dataModel:RetrieveAuctionMaxExpire(cachedAuctions[auctionID], auctionID)
-				local nextMaxExpire = dataModel:RetrieveAuctionMaxExpire(cachedAuctions[nextAuctionID], nextAuctionID)
-				
-				if maxExpire > nextMaxExpire then
-					dataModel:ModifyAuctionMaxExpire(cachedAuctions[auctionID], auctionID, nextMaxExpire)
-				end
-				Release()
-			end
 		end		
 	end
 	
@@ -510,7 +464,7 @@ local function GetAuctionData(itemType, auctionID)
 	local rarity = dataModel:RetrieveItemRarity(itemType)
 	local category = dataModel:RetrieveItemCategory(itemType)
 
-	local seller, bid, buy, ownBidded, firstSeen, lastSeen, minExpire, maxExpire, stacks, flags, active = dataModel:RetrieveAuctionData(itemType, auctionID)
+	local seller, bid, buy, ownBidded, firstSeen, lastSeen, remaining, stacks, flags, active = dataModel:RetrieveAuctionData(itemType, auctionID)
 	if not seller then return nil end
 	
 	return
@@ -530,8 +484,7 @@ local function GetAuctionData(itemType, auctionID)
 		sellerName = seller,
 		firstSeenTime = firstSeen,
 		lastSeenTime = lastSeen,
-		minExpireTime = minExpire,
-		maxExpireTime = maxExpire,
+		remainingTime = remaining,
 		own = flags.own,
 		bidded = flags.bidded,
 		removedBeforeExpiration = flags.beforeExpiration,

@@ -24,7 +24,7 @@ local MAX_DATA_AGE = 30 * 24 * 60 * 60
 local function DataModelBuilder(rawData)
 	local I_NAME, I_ICON, I_CATEGORY, I_LEVEL, I_CALLINGS, I_RARITY, I_LASTSEEN = 1, 2, 3, 4, 5, 6, 7
 	local IC_WARRIOR, IC_CLERIC, IC_ROGUE, IC_MAGE, IC_PRIMALIST = 1, 2, 3, 4, 5
-	local A_SELLER, A_BID, A_BUY, A_OWNBID, A_FIRSTSEEN, A_LASTSEEN, A_MINEXPIRE, A_MAXEXPIRE, A_STACK, A_FLAGS = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+	local A_SELLER, A_BID, A_BUY, A_OWNBID, A_FIRSTSEEN, A_LASTSEEN, A_REMAINING, A_STACK, A_FLAGS = 1, 2, 3, 4, 5, 6, 7, 8, 9
 	local AF_OWN, AF_BIDDED, AF_BEFOREEXPIRATION, AF_OWNBOUGHT, AF_CANCELLED = 1, 2, 3, 4, 5
 
 	-- If rawData is empty, create an empty model
@@ -383,7 +383,7 @@ local function DataModelBuilder(rawData)
 
 		return rawData.auctionSellers[auctionData[A_SELLER]],
 				auctionData[A_BID], auctionData[A_BUY], auctionData[A_OWNBID],
-				auctionData[A_FIRSTSEEN], auctionData[A_LASTSEEN], auctionData[A_MINEXPIRE], auctionData[A_MAXEXPIRE],
+				auctionData[A_FIRSTSEEN], auctionData[A_LASTSEEN], auctionData[A_REMAINING],
 				auctionData[A_STACK],
 				{
 					own = auctionData[A_FLAGS][AF_OWN] and true or false,
@@ -430,17 +430,11 @@ local function DataModelBuilder(rawData)
 		local auctionData = rawData.auctions[auctionID]
 		return auctionData[A_LASTSEEN]
 	end
-	
-	function dataModel:RetrieveAuctionMinExpire(itemType, auctionID)
+
+	function dataModel:RetrieveAuctionRemaining(itemType, auctionID)
 		if not itemType or not rawData.items[itemType] then return end
 		local auctionData = rawData.auctions[auctionID]
-		return auctionData[A_MINEXPIRE]
-	end
-	
-	function dataModel:RetrieveAuctionMaxExpire(itemType, auctionID)
-		if not itemType or not rawData.items[itemType] then return end
-		local auctionData = rawData.auctions[auctionID]
-		return auctionData[A_MAXEXPIRE]
+		return auctionData[A_REMAINING]
 	end
 	
 	function dataModel:RetrieveAuctionStack(itemType, auctionID)
@@ -462,9 +456,9 @@ local function DataModelBuilder(rawData)
 		}
 	end
 
-	function dataModel:StoreAuction(itemType, auctionID, active, seller, bid, buy, ownBid, firstSeen, lastSeen, minExpire, maxExpire, stack, flags)
+	function dataModel:StoreAuction(itemType, auctionID, active, seller, bid, buy, ownBid, firstSeen, lastSeen, remaining, stack, flags)
 		if not itemType or not rawData.items[itemType] or not auctionID then return false end
-		if not seller or not bid or not buy or not ownBid or not firstSeen or not lastSeen or not minExpire or not maxExpire or not stack or type(flags) ~= "table" then return false end
+		if not seller or not bid or not buy or not ownBid or not firstSeen or not lastSeen or not remaining or not stack or type(flags) ~= "table" then return false end
 		
 		local sellerID = reverseSellers[seller]
 		if not sellerID then
@@ -481,8 +475,7 @@ local function DataModelBuilder(rawData)
 			[A_OWNBID] = ownBid,
 			[A_FIRSTSEEN] = firstSeen,
 			[A_LASTSEEN] = lastSeen,
-			[A_MINEXPIRE] = minExpire,
-			[A_MAXEXPIRE] = maxExpire,
+			[A_REMAINING] = remaining,
 			[A_STACK] = stack,
 			[A_FLAGS] =
 			{
@@ -559,21 +552,12 @@ local function DataModelBuilder(rawData)
 
 		return true
 	end
-	
-	function dataModel:ModifyAuctionMinExpire(itemType, auctionID, minExpire)
+
+	function dataModel:ModifyAuctionRemaining(itemType, auctionID, remaining)
 		if not itemType or not rawData.items[itemType] or not auctionID then return false end
-		if not minExpire then return false end
+		if not remaining then return false end
 
-		rawData.auctions[auctionID][A_MINEXPIRE] = minExpire
-
-		return true
-	end
-	
-	function dataModel:ModifyAuctionMaxExpire(itemType, auctionID, maxExpire)
-		if not itemType or not rawData.items[itemType] or not auctionID then return false end
-		if not maxExpire then return false end
-
-		rawData.auctions[auctionID][A_MAXEXPIRE] = maxExpire
+		rawData.auctions[auctionID][A_REMAINING] = remaining
 
 		return true
 	end

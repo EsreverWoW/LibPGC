@@ -198,7 +198,7 @@ function PublicInterface.PostItem(item, stackSize, amount, unitBidPrice, unitBuy
 	
 	amount, stackSize, unitBidPrice, duration = MFloor(amount), MFloor(stackSize), MFloor(unitBidPrice), MFloor(duration)
 	if unitBuyoutPrice then unitBuyoutPrice = MMax(MFloor(unitBuyoutPrice), unitBidPrice) end
-	if amount <= 0 or stackSize <= 0 or unitBidPrice <= 0 or (duration ~= 12 and duration ~= 24 and duration ~= 48) then return false end
+	if amount <= 0 or stackSize <= 0 or unitBidPrice <= 0 or (duration ~= 12 and duration ~= 48 and duration ~= 168) then return false end
 
 	local itemType = nil
 	if item:sub(1, 1) == "I" then

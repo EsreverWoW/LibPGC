@@ -38,8 +38,8 @@ local function Migration(oldModel)
 		Release()
 		
 		for auctionID in pairs(oldModel:RetrieveAllAuctions(itemType)) do
-			local seller, bid, buy, ownBid, firstSeen, lastSeen, minExpire, maxExpire, stack, flags, active = oldModel:RetrieveAuctionData(itemType, auctionID)
-			if not newModel:StoreAuction(itemType, auctionID, active, seller, bid, buy, ownBid, firstSeen, lastSeen, minExpire, maxExpire, stack, flags) then
+			local seller, bid, buy, ownBid, firstSeen, lastSeen, remaining, stack, flags, active = oldModel:RetrieveAuctionData(itemType, auctionID)
+			if not newModel:StoreAuction(itemType, auctionID, active, seller, bid, buy, ownBid, firstSeen, lastSeen, remaining, stack, flags) then
 				error("Couldn't migrate auction")
 			end
 			auctionCount = auctionCount + 1
